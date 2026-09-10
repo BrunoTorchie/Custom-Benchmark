@@ -198,7 +198,6 @@ export function renderDashboard(
 			--brand: #252b38;
 			--brand-deep: #1b202a;
 			--brand-light: #4b5567;
-			--surface: #f7f8fa;
 			/* Text and rules that sit on a brand-coloured surface. */
 			--on-brand: #f7f8fa;
 			--on-brand-dim: rgba(247, 248, 250, 0.62);
@@ -227,7 +226,7 @@ export function renderDashboard(
 		.brand {
 			position: relative;
 			padding: 12px 12px 10px;
-			color: var(--surface);
+			color: var(--on-brand);
 			background: var(--brand-deep);
 			border-bottom: 2px solid var(--on-brand-dim);
 			overflow: hidden;
@@ -254,7 +253,7 @@ export function renderDashboard(
 			height: 26px;
 			flex: 0 0 26px;
 			padding: 0;
-			color: var(--surface);
+			color: var(--on-brand);
 			background: transparent;
 			border: 1px solid rgba(247, 248, 250, 0.28);
 			border-radius: 4px;
@@ -300,7 +299,7 @@ export function renderDashboard(
 		.live-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 		.live-badge--connected { color: var(--success); }
 		.recommendation__top { display: flex; align-items: center; gap: 9px; min-width: 0; }
-		.recommendation__mark { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; color: var(--surface); background: var(--brand-deep); border: 1px solid var(--brand-light); border-radius: 50%; font-size: 10px; font-weight: 800; }
+		.recommendation__mark { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; color: var(--on-brand); background: var(--brand-deep); border: 1px solid var(--brand-light); border-radius: 50%; font-size: 10px; font-weight: 800; }
 		.recommendation__mark .source__logo { width: 22px; height: 22px; }
 		.recommendation__mark .source__logo--codex { width: 20px; height: 20px; }
 		.recommendation__model { min-width: 0; flex: 1; }
