@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+
+# Packaged extensions
+*.vsix
+
+# Test runner
+.vscode-test/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.log

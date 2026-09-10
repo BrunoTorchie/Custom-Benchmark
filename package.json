@@ -1,0 +1,194 @@
+{
+  "name": "personal-benchmark",
+  "displayName": "Personal Benchmark",
+  "description": "A local-first VS Code extension for capturing opted-in AI coding work and curating a private, personal LLM benchmark.",
+  "version": "0.0.12",
+  "publisher": "techtorch",
+  "author": {
+    "name": "Bruno Manzano"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BrunoTorchie/Custom-Benchmark.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BrunoTorchie/Custom-Benchmark/issues"
+  },
+  "homepage": "https://github.com/BrunoTorchie/Custom-Benchmark#readme",
+  "private": true,
+  "icon": "resources/icon.png",
+  "engines": {
+    "vscode": "^1.136.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "benchmark",
+    "copilot",
+    "claude",
+    "codex",
+    "evaluation",
+    "local-first",
+    "techtorch"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "personalBenchmark.enableRepository",
+        "title": "Enable Repository",
+        "category": "Personal Benchmark",
+        "icon": "$(record)"
+      },
+      {
+        "command": "personalBenchmark.pauseCapture",
+        "title": "Pause Capture",
+        "category": "Personal Benchmark",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "personalBenchmark.resumeCapture",
+        "title": "Resume Capture",
+        "category": "Personal Benchmark",
+        "icon": "$(play)"
+      },
+      {
+        "command": "personalBenchmark.disableRepository",
+        "title": "Disable Repository",
+        "category": "Personal Benchmark"
+      },
+      {
+        "command": "personalBenchmark.recordPreviewEvent",
+        "title": "Record Preview Event",
+        "category": "Personal Benchmark",
+        "icon": "$(add)"
+      },
+      {
+        "command": "personalBenchmark.analyzePrompt",
+        "title": "Recommend Before Sending",
+        "category": "Personal Benchmark",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "personalBenchmark.openRecommendedHarness",
+        "title": "Copy Prompt and Open Recommended Harness",
+        "category": "Personal Benchmark"
+      },
+      {
+        "command": "personalBenchmark.connectLivePrompts",
+        "title": "Connect Live Prompt Feed",
+        "category": "Personal Benchmark"
+      },
+      {
+        "command": "personalBenchmark.disconnectLivePrompts",
+        "title": "Disconnect Live Prompt Feed",
+        "category": "Personal Benchmark"
+      },
+      {
+        "command": "personalBenchmark.reviewCandidates",
+        "title": "Review Candidates",
+        "category": "Personal Benchmark"
+      },
+      {
+        "command": "personalBenchmark.runBenchmark",
+        "title": "Run Benchmark",
+        "category": "Personal Benchmark"
+      },
+      {
+        "command": "personalBenchmark.openDataFolder",
+        "title": "Open Local Data Folder",
+        "category": "Personal Benchmark",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "personalBenchmark.deleteRepositoryData",
+        "title": "Delete Repository Data",
+        "category": "Personal Benchmark"
+      },
+      {
+        "command": "personalBenchmark.refresh",
+        "title": "Refresh",
+        "category": "Personal Benchmark",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "personalBenchmark",
+          "title": "Personal Benchmark",
+          "icon": "resources/benchmark.svg"
+        }
+      ]
+    },
+    "views": {
+      "personalBenchmark": [
+        {
+          "id": "personalBenchmark.dashboard",
+          "name": "Overview",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "personalBenchmark.refresh",
+          "when": "view == personalBenchmark.dashboard",
+          "group": "navigation@1"
+        },
+        {
+          "command": "personalBenchmark.openDataFolder",
+          "when": "view == personalBenchmark.dashboard",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Personal Benchmark",
+      "properties": {
+        "personalBenchmark.rawTraceRetentionDays": {
+          "type": "number",
+          "default": 90,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Days to retain raw traces that have not been promoted to benchmark cases."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run generate-provider-icons && npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "npm run generate-provider-icons && tsc -p . --outDir out",
+    "generate-provider-icons": "node generate-provider-icons.mjs",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@iconify-json/logos": "^1.2.13",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "@types/vscode": "^1.136.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.5.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  }
+}
