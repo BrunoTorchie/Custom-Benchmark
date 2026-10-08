@@ -2,7 +2,7 @@
   "name": "personal-benchmark",
   "displayName": "Personal Benchmark",
   "description": "A local-first VS Code extension for capturing opted-in AI coding work and curating a private, personal LLM benchmark.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "techtorch",
   "author": {
     "name": "Bruno Manzano"

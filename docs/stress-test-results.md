@@ -30,7 +30,7 @@ Native testing exposed and fixed a form-reset collision (`id="reset"` shadowed `
 
 ## Automated coverage and reproduction
 
-Run `npm test` for compilation, type checking, linting and all 72 tests in a real extension host. Run `npm run package` for production bundles. The runner opens `src/test/fixtures/workspace`; capture tests use temporary directories and clean them up. The command handoff test restores the clipboard and mocks harness opening without submitting a prompt.
+Run `npm test` for compilation, type checking, linting and all 86 tests in a real extension host. Run `npm run package` for production bundles. The runner opens `src/test/fixtures/workspace`; capture tests use temporary directories and clean them up. The command handoff test restores the clipboard and mocks harness opening without submitting a prompt.
 
 New coverage includes all four scoring rules, case validation and redaction, model identity collisions, registered results driving recommendations, stale/duplicate/synthetic evidence exclusion, timeouts even when an executor ignores cancellation, cancellation and pre-cancellation, output limits, redacted failures, 500-answer execution, private atomic storage, corruption detection, generated webview script parsing and the VS Code model API adapter.
 

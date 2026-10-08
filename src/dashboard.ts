@@ -102,8 +102,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider, vscode
 			snapshot.benchmarkRunCount,
 			this.drafts.get(snapshot.folder?.uri.toString() ?? '') ?? '',
 			snapshot.benchmarkError,
+			snapshot.folder?.uri.toString() ?? '',
 		);
 	}
+
+	getDraft(folder: vscode.WorkspaceFolder): string | undefined { return this.drafts.get(folder.uri.toString()); }
 
 	forgetDraft(folder: vscode.WorkspaceFolder): void { this.drafts.delete(folder.uri.toString()); }
 
@@ -119,9 +122,15 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider, vscode
 			return;
 		}
 
+		// The view re-renders asynchronously after the active folder changes, so a message can
+		// come from the previous folder's view. Key drafts by the folder the view was rendered
+		// for, and never run a command against a folder the user was not looking at.
+		const renderedFolder = message.folder ?? '';
 		if (message.command === 'draftChanged' && message.prompt !== undefined) {
-			const folder = this.getSnapshot().folder;
-			if (folder) { this.drafts.set(folder.uri.toString(), message.prompt); }
+			if (renderedFolder) { this.drafts.set(renderedFolder, message.prompt); }
+			return;
+		}
+		if (renderedFolder !== (this.getSnapshot().folder?.uri.toString() ?? '')) {
 			return;
 		}
 		const commandId = COMMAND_IDS[message.command];
@@ -138,6 +147,7 @@ interface CommandMessage {
 	type: 'command';
 	command: string;
 	prompt?: string;
+	folder?: string;
 }
 
 function isCommandMessage(message: unknown): message is CommandMessage {
@@ -149,7 +159,8 @@ function isCommandMessage(message: unknown): message is CommandMessage {
 	return candidate.type === 'command'
 		&& typeof candidate.command === 'string'
 		&& (candidate.prompt === undefined
-			|| (typeof candidate.prompt === 'string' && candidate.prompt.length <= 100_000));
+			|| (typeof candidate.prompt === 'string' && candidate.prompt.length <= 100_000))
+		&& (candidate.folder === undefined || typeof candidate.folder === 'string');
 }
 
 export function renderDashboard(
@@ -165,6 +176,7 @@ export function renderDashboard(
 	benchmarkRunCount = 0,
 	draftText = '',
 	benchmarkError?: string,
+	folderKey = '',
 ): string {
 	const nonce = randomBytes(16).toString('base64');
 	const repositoryName = escapeHtml(model.repositoryName);
@@ -429,7 +441,7 @@ export function renderDashboard(
 		}
 	</style>
 </head>
-<body>
+<body data-folder="${escapeHtml(folderKey)}">
 	<header class="brand">
 		<div class="brand__row">
 			<img class="brand__mark" src="${iconUri}" alt="Personal Benchmark">
@@ -504,7 +516,7 @@ export function renderDashboard(
 		};
 		draftInput?.addEventListener('input', () => {
 			syncDraftSubmit();
-			vscode.postMessage({ type: 'command', command: 'draftChanged', prompt: draftInput.value });
+			vscode.postMessage({ type: 'command', command: 'draftChanged', prompt: draftInput.value, folder: document.body.dataset.folder });
 		});
 		syncDraftSubmit();
 		draftForm?.addEventListener('submit', (event) => {
@@ -513,12 +525,12 @@ export function renderDashboard(
 			if (!prompt?.trim() || !draftSubmit) return;
 			draftSubmit.disabled = true;
 			draftSubmit.textContent = 'Analyzing...';
-			vscode.postMessage({ type: 'command', command: 'analyzePrompt', prompt });
+			vscode.postMessage({ type: 'command', command: 'analyzePrompt', prompt, folder: document.body.dataset.folder });
 		});
 		document.addEventListener('click', (event) => {
 			const button = event.target.closest('[data-command]');
 			if (!button || button.disabled) return;
-			vscode.postMessage({ type: 'command', command: button.dataset.command });
+			vscode.postMessage({ type: 'command', command: button.dataset.command, folder: document.body.dataset.folder });
 		});
 	</script>
 </body>

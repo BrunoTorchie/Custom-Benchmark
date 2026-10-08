@@ -114,6 +114,22 @@ suite('Workflow stress tests', () => {
 		assert.ok((await fs.readFile(eventPath, 'utf8')).includes('{"torn":'), 'Unparseable lines are left for manual inspection');
 		if (process.platform !== 'win32') { assert.strictEqual((await fs.stat(eventPath)).mode & 0o777, 0o600); }
 		assert.strictEqual(await store.purgeExpiredEvents(Number.NaN), 0, 'An invalid window must never delete');
+
+		await store.analyzePrompt(folder, 'Fix the failing tests', [], 'manual');
+		assert.ok(store.getRepositoryState(folder).recommendation);
+		await store.purgeExpiredEvents(90, new Date(Date.now() + 91 * 24 * 60 * 60 * 1_000));
+		assert.strictEqual(store.getRepositoryState(folder).recommendation, undefined, 'The stored preview expires with the ledger');
+	});
+
+	test('redacts ledger payload values without corrupting the JSON line', async () => {
+		await store.enable(folder);
+		const recommendation = { ...recommendModel('Fix tests', [], 'manual'), modelLabel: 'TOKEN=x"y' };
+		await store.recordRecommendation(folder, recommendation);
+		const [event] = await store.readEvents(folder);
+		assert.strictEqual(event.kind, 'prompt.recommended');
+		assert.strictEqual(event.payload?.modelLabel, 'TOKEN=[REDACTED]"y');
+		assert.strictEqual(event.repository?.name, folder.name);
+		assert.strictEqual(event.redaction?.replacementCount, 1);
 	});
 
 	test('routes the real dashboard provider to the handoff after recommendation', () => {
@@ -135,10 +151,36 @@ suite('Workflow stress tests', () => {
 			document: {
 				querySelector: (selector: string) => selector === '[data-draft-input]' ? input : selector === '[data-draft-submit]' ? submit : { addEventListener: (name: string, callback: (event: unknown) => void) => listeners.set(name, callback) },
 				addEventListener: () => {},
+				body: { dataset: { folder: html.match(/<body data-folder="([^"]*)"/)?.[1] } },
 			},
 		});
 		listeners.get('submit')?.({ preventDefault: () => {} });
-		assert.strictEqual((messages[0] as { prompt: string }).prompt, prompt);
+		assert.deepStrictEqual(JSON.parse(JSON.stringify(messages[0])), { type: 'command', command: 'analyzePrompt', prompt, folder: folder.uri.toString() });
+	});
+
+	test('keys dashboard drafts to the folder that rendered them and drops stale commands', async () => {
+		let snapshot: DashboardSnapshot = { folder, mode: 'capturing', providers: [], hasPendingDraft: false, promptFeedConnected: false };
+		let receive!: (message: unknown) => void;
+		const webview = { html: '', cspSource: 'https://test.local', asWebviewUri: (uri: vscode.Uri) => uri, onDidReceiveMessage: (callback: (message: unknown) => void) => { receive = callback; return { dispose() {} }; } };
+		const provider = new DashboardViewProvider(vscode.Uri.file(directory), () => snapshot);
+		provider.resolveWebviewView({ webview, onDidDispose: () => ({ dispose() {} }) } as unknown as vscode.WebviewView);
+		const second = { ...folder, uri: vscode.Uri.file(path.join(directory, 'second')), name: 'Second' };
+		snapshot = { ...snapshot, folder: second };
+		receive({ type: 'command', command: 'draftChanged', prompt: 'Draft typed in the first folder', folder: folder.uri.toString() });
+		assert.strictEqual(provider.getDraft(folder), 'Draft typed in the first folder');
+		assert.strictEqual(provider.getDraft(second), undefined, 'A stale view must not leak its draft into the new folder');
+		const executed: unknown[][] = [];
+		const commands = vscode.commands as { executeCommand: typeof vscode.commands.executeCommand };
+		const original = commands.executeCommand;
+		commands.executeCommand = (async (...args: unknown[]) => { executed.push(args); }) as typeof vscode.commands.executeCommand;
+		try {
+			receive({ type: 'command', command: 'analyzePrompt', prompt: 'Stale', folder: folder.uri.toString() });
+			receive({ type: 'command', command: 'analyzePrompt', prompt: 'Current', folder: second.uri.toString() });
+		} finally {
+			commands.executeCommand = original;
+			provider.dispose();
+		}
+		assert.deepStrictEqual(executed, [['personalBenchmark.analyzePrompt', 'Current']], 'Only the command from the current folder runs');
 	});
 
 	test('runs 30 real bridge processes through inbox, store, review and deletion', async () => {

@@ -54,6 +54,22 @@ export function parseEventLog(contents: string): StoredEvent[] {
 	return events.reverse();
 }
 
+function redactValues(value: unknown): { value: unknown; replacementCount: number } {
+	if (typeof value === 'string') {
+		return redactSecrets(value);
+	}
+	if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+		let replacementCount = 0;
+		const entries = Object.entries(value).map(([key, item]) => {
+			const redacted = redactValues(item);
+			replacementCount += redacted.replacementCount;
+			return [key, redacted.value] as const;
+		});
+		return { value: Array.isArray(value) ? entries.map(([, item]) => item) : Object.fromEntries(entries), replacementCount };
+	}
+	return { value, replacementCount: 0 };
+}
+
 /** Unparseable lines are never treated as expired, so a purge cannot delete what it cannot read. */
 function isExpiredEventLine(line: string, cutoff: number): boolean {
 	try {
@@ -241,7 +257,7 @@ export class LocalStore {
 		await fs.rm(this.getRepositoryDirectory(folder), { recursive: true, force: true });
 	}
 
-	/** Drops ledger events older than the retention window. Returns how many were removed. */
+	/** Drops ledger events and stored recommendations older than the retention window. Returns how many were removed. */
 	async purgeExpiredEvents(retentionDays: number, now = new Date()): Promise<number> {
 		if (!Number.isFinite(retentionDays) || retentionDays < 1) {
 			return 0;
@@ -250,7 +266,15 @@ export class LocalStore {
 		let removed = 0;
 		await this.mutate(async () => {
 			const cutoff = now.getTime() - retentionDays * 24 * 60 * 60 * 1_000;
-			for (const uri of Object.keys(this.getStates())) {
+			for (const [uri, state] of Object.entries(this.getStates())) {
+				// The stored recommendation carries a redacted prompt preview; it expires with the ledger.
+				if (state.recommendation && !(Date.parse(state.recommendation.analyzedAt) >= cutoff)) {
+					const states = this.getStates();
+					states[uri] = { ...states[uri], recommendation: undefined };
+					await this.context.globalState.update(REPOSITORY_STATE_KEY, states);
+					removed += 1;
+				}
+
 				const eventPath = path.join(this.getRepositoryDirectoryForUri(uri), 'events.jsonl');
 				let contents: string;
 				try {
@@ -329,8 +353,10 @@ export class LocalStore {
 				replacementCount: 0,
 			},
 		};
-		const redacted = redactSecrets(JSON.stringify(event));
-		const safeEvent = JSON.parse(redacted.value) as typeof event;
+		// Redact each payload value, not the serialized line: a rule matching across a JSON escape
+		// would corrupt the record, and repository identity must stay intact.
+		const redacted = redactValues(payload);
+		const safeEvent = { ...event, payload: redacted.value as Record<string, unknown> };
 		safeEvent.redaction.replacementCount = redacted.replacementCount;
 
 		const eventPath = this.getEventLogPath(folder);

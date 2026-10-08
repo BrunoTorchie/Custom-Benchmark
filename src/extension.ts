@@ -145,6 +145,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					title: 'Analyze task prompt',
 					prompt: 'Describe the task you want an LLM to handle.',
 					placeHolder: 'Example: Debug the failing auth tests and implement a verified fix',
+					value: dashboardProvider.getDraft(folder),
 					ignoreFocusOut: true,
 					validateInput: (value) => value.trim() === '' ? 'Enter a task prompt.' : undefined,
 				});
@@ -159,6 +160,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					promptHash: recommendation.promptHash,
 					analyzedAt: recommendation.analyzedAt,
 				});
+				dashboardProvider.forgetDraft(folder);
 				await refresh();
 			});
 		}),
@@ -375,22 +377,24 @@ async function processLivePrompt(
 	refresh: () => Promise<void>,
 	pendingPromptDrafts: Map<string, PendingPromptDraft>,
 ): Promise<boolean> {
+	// Nested workspace folders both contain the prompt's cwd; the deepest one owns it.
 	let folder: vscode.WorkspaceFolder | undefined;
+	let folderRootLength = -1;
 	for (const candidate of vscode.workspace.workspaceFolders ?? []) {
 		if (candidate.uri.scheme !== 'file') {
 			continue;
 		}
 		const canonicalRoot = await store.getCanonicalRepositoryPath(candidate.uri.fsPath);
-		if (isPathInsideRoot(item.cwd, canonicalRoot)) {
+		if (isPathInsideRoot(item.cwd, canonicalRoot) && canonicalRoot.length > folderRootLength) {
 			folder = candidate;
-			break;
+			folderRootLength = canonicalRoot.length;
 		}
 	}
+	const expired = !(Date.now() - Date.parse(item.receivedAt) <= LIVE_PROMPT_MAX_AGE_MS);
 	if (!folder) {
 		const enabledRoots = await store.getEnabledRepositoryPaths();
 		const stillEnabled = enabledRoots.some((root) => isPathInsideRoot(item.cwd, root));
-		const age = Date.now() - Date.parse(item.receivedAt);
-		return !stillEnabled || age > LIVE_PROMPT_MAX_AGE_MS;
+		return !stillEnabled || expired;
 	}
 
 	if (store.getCaptureMode(folder) !== 'capturing') {
@@ -398,7 +402,15 @@ async function processLivePrompt(
 	}
 
 	pendingPromptDrafts.delete(folder.uri.toString());
-	await store.recordRecommendation(folder, item.recommendation);
+	try {
+		await store.recordRecommendation(folder, item.recommendation);
+	} catch (error) {
+		// Retry a failed write, but never keep an item past the live-prompt window.
+		if (expired) {
+			return true;
+		}
+		throw error;
+	}
 	await refresh();
 	return true;
 }

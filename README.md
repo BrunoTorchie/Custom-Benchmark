@@ -38,7 +38,7 @@ Scoring supports case-insensitive contains/excludes, whitespace-trimmed exact ma
 
 ## Recommendation and capture boundary
 
-This `0.1.0` build recommends before submission. Type or paste the draft into **Before You Send**, select **Recommend before sending**, inspect the result, then select **Copy & open**. Copilot receives an unsent prefilled draft through VS Code's supported partial-query command. Claude Code and Codex do not expose a supported prompt-insertion API, so the extension copies the exact draft and opens the selected harness for you to paste, review, and send. It never auto-submits.
+Personal Benchmark recommends before submission. Type or paste the draft into **Before You Send**, select **Recommend before sending**, inspect the result, then select **Copy & open**. Copilot receives an unsent prefilled draft through VS Code's supported partial-query command. Claude Code and Codex do not expose a supported prompt-insertion API, so the extension copies the exact draft and opens the selected harness for you to paste, review, and send. It never auto-submits.
 
 The optional live feed observes `UserPromptSubmit` after submission for capture and audit. It is not the primary routing mechanism. Capture does not collect complete conversations, tool trajectories or patches. Benchmark cases are explicitly curated in the workbench.
 
@@ -85,8 +85,9 @@ Requires Node.js and VS Code `^1.136.0`.
 npm install        # install dependencies
 npm run compile    # generate icons, type-check, lint, bundle
 npm run watch      # rebuild on change
-npm test           # run the extension test suite (72 tests)
+npm test           # run the extension test suite (86 tests)
 npm run package    # production bundle for packaging
+npm run vsix       # build personal-benchmark-<version>.vsix
 ```
 
 The test runner opens a synthetic workspace. Workflow tests exercise registered commands and clipboard handoff with a mock harness, 100 concurrent ledger writes across two folders, 30 real hook-bridge processes across the three adapters, and scored execution up to 500 case/model pairs. Temporary capture data is cleaned up and clipboard contents are restored. See [docs/stress-test-results.md](docs/stress-test-results.md) for coverage and boundaries.

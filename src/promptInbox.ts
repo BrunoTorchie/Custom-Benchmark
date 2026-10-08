@@ -6,6 +6,7 @@ import { PromptInboxItem } from './promptFeedProtocol';
 import { RECOMMENDATION_ENGINE_VERSION } from './recommendation';
 
 const CLAIM_STALE_MS = 10_000;
+const CLAIM_ABANDONED_MS = 10 * 60 * 1_000;
 const CLAIM_MARKER = '.json.processing-';
 
 export async function drainPromptInbox(
@@ -73,16 +74,16 @@ async function recoverInterruptedClaims(inboxDirectory: string, fileNames: reado
 			continue;
 		}
 
-		// Renaming preserves the event's mtime, so age alone cannot identify
-		// an abandoned claim. A live extension host may still be processing it.
+		// Renaming preserves the event's mtime, so mtime alone cannot identify an abandoned
+		// claim; a live extension host may still be processing it. The rename does update
+		// ctime, so a claim held far longer than processing takes is abandoned even if its
+		// owner's PID has since been reused by an unrelated process.
 		const owner = fileName.slice(markerIndex + CLAIM_MARKER.length).split('-')[0];
-		if (isLiveProcess(owner)) {
-			continue;
-		}
 		const claimedPath = path.join(inboxDirectory, fileName);
 		try {
 			const stats = await fs.stat(claimedPath);
-			if (Date.now() - stats.mtimeMs < CLAIM_STALE_MS) {
+			const abandoned = Date.now() - stats.ctimeMs > CLAIM_ABANDONED_MS;
+			if (!abandoned && (isLiveProcess(owner) || Date.now() - stats.mtimeMs < CLAIM_STALE_MS)) {
 				continue;
 			}
 			const originalPath = path.join(inboxDirectory, fileName.slice(0, markerIndex + '.json'.length));

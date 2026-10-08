@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
+import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 
 import { PromptInboxItem } from '../promptFeedProtocol';
@@ -50,6 +51,28 @@ suite('Prompt inbox', () => {
 
 		assert.strictEqual(calls, 1);
 		assert.deepStrictEqual(await fs.readdir(temporaryDirectory), []);
+	});
+
+	test('recovers a claim whose numeric owner process has exited, but not one held by a live process', async () => {
+		const deadPid = await new Promise<number>((resolve, reject) => {
+			const child = spawn(process.execPath, ['-e', ''], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
+			child.on('error', reject);
+			child.on('exit', () => resolve(child.pid!));
+		});
+		const oldDate = new Date(Date.now() - 60_000);
+		for (const name of [`dead.json.processing-${deadPid}-claim`, `live.json.processing-${process.pid}-claim`]) {
+			await writeItem(name);
+			await fs.utimes(path.join(temporaryDirectory, name), oldDate, oldDate);
+		}
+
+		const consumed: string[] = [];
+		await drainPromptInbox(temporaryDirectory, async (item) => {
+			consumed.push(item.id);
+			return true;
+		});
+
+		assert.strictEqual(consumed.length, 1);
+		assert.deepStrictEqual(await fs.readdir(temporaryDirectory), [`live.json.processing-${process.pid}-claim`]);
 	});
 
 	test('does not steal an old item while another consumer is still processing it', async () => {

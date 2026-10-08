@@ -32,6 +32,26 @@ suite('Prompt hook files', () => {
 		await fs.rm(temporaryDirectory, { recursive: true, force: true });
 	});
 
+	test('writes through a symlinked settings file and keeps its permissions', async function () {
+		if (process.platform === 'win32') { this.skip(); }
+		const managedPath = path.join(temporaryDirectory, 'dotfiles', 'claude-settings.json');
+		await fs.mkdir(path.dirname(managedPath), { recursive: true });
+		await fs.writeFile(managedPath, JSON.stringify({ theme: 'dark' }), { mode: 0o644 });
+		await fs.chmod(managedPath, 0o644);
+		await fs.mkdir(path.dirname(claudePath), { recursive: true });
+		await fs.symlink(managedPath, claudePath);
+
+		await updatePromptHookFiles(files, true);
+		assert.ok((await fs.lstat(claudePath)).isSymbolicLink(), 'The dotfile link must survive connect');
+		assert.strictEqual((await fs.stat(managedPath)).mode & 0o777, 0o644);
+		assert.ok(JSON.parse(await fs.readFile(managedPath, 'utf8')).hooks);
+		assert.strictEqual((await fs.stat(copilotPath)).mode & 0o777, 0o600, 'New hook files stay owner-only');
+
+		await updatePromptHookFiles(files, false);
+		assert.ok((await fs.lstat(claudePath)).isSymbolicLink(), 'The dotfile link must survive disconnect');
+		assert.deepStrictEqual(JSON.parse(await fs.readFile(managedPath, 'utf8')), { theme: 'dark' });
+	});
+
 	test('connects all hosts and restores unrelated configuration on disconnect', async () => {
 		const originalClaude = {
 			theme: 'dark',

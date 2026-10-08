@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.1 - 2026-10-08
+
+- Fixed benchmark data becoming permanently unreadable when redaction lengthened a saved case past its length limits. Limits now apply after redaction, and saved cases are no longer re-redacted on load, so a future redaction rule cannot invalidate stored cases or run history.
+- Made secret redaction linear-time. A long unbroken token previously took seconds to scan, long enough to exceed the 2-second hook timeout or stall the extension host.
+- Redaction now covers AWS-style keys, passwords in connection strings, unquoted `key: value` credentials, bare Bearer tokens, Slack, Google and JWT tokens, private keys, and unterminated quoted secrets.
+- Implemented `personalBenchmark.rawTraceRetentionDays`. Ledger events and stored recommendation previews older than the window are deleted at startup, every six hours, and when the setting changes. Curated cases and run history are kept.
+- Ledger events now redact payload values instead of the serialized JSON line, which a secret pattern could corrupt.
+- Live prompts in nested multi-root workspaces are recorded under the deepest matching folder. A live prompt whose write keeps failing is dropped after 24 hours instead of retrying indefinitely.
+- Inbox claims held longer than 10 minutes are recovered even when the original owner's PID has been reused.
+- Connecting or disconnecting the live feed writes through a symlinked settings file and keeps its permissions.
+- Dashboard drafts stay with the folder they were typed in, and commands from a view of a previously active folder are ignored. **Analyze another** prefills any unsent draft.
+- Workbench: the "Case saved" notice no longer disappears straight away. An edited demo case counts as a real case once its content changes. A newly analyzed draft reaches an already-open workbench. Panel listeners are released when the panel closes. The 16 MiB history cap is measured on the bytes actually written.
+- When eligible benchmark evidence exists but the chosen harness is not Copilot, the recommendation now says so instead of claiming results are still being generated.
+- The Delete Repository Data confirmation now states that curated cases and run history are deleted too.
+- Development: added `.vscode/tasks.json` (F5 previously failed on a missing build task), removed a broken Extension Tests launch configuration, added `npm run vsix`, and applied dev-dependency security fixes.
+
 ## 0.1.0 - 2026-09-18
 
 - Added a benchmark workbench with curated cases, editable checks, model discovery, reviewed execution, cancellation, persistent run history and per-answer scoring.
@@ -7,9 +23,6 @@
 - Added offline demo comparisons, bounded response previews/history, request timeouts and provider error reporting.
 - Fixed handoff visibility, prompt whitespace preservation, capture consent, concurrent state updates, quoted secret redaction and duplicate inbox processing.
 - Added scored-run and workflow stress coverage, plus real VS Code UI verification.
-
-## Unreleased
-
 - Rebranded the extension to TechTorch and removed the previous publisher identity from the manifest, dashboard, and docs.
 - Renamed the dashboard theme tokens to semantic names, so a palette change is now a values-only edit.
 - Added the missing `.vscode-test.mjs` configuration, which had left the entire test suite unable to run.

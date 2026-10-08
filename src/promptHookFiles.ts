@@ -102,13 +102,24 @@ async function restoreSnapshot(snapshot: HookFileSnapshot): Promise<void> {
 }
 
 async function writeAtomically(filePath: string, content: string): Promise<void> {
-	await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-	const temporaryPath = `${filePath}.${process.pid}-${randomUUID()}.tmp`;
+	// Write through a symlinked settings file (dotfile managers) instead of replacing the link,
+	// and keep an existing file's permissions. New files are owner-only.
+	let targetPath = filePath;
+	let mode = 0o600;
 	try {
-		await fs.writeFile(temporaryPath, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-		await tryChmod(temporaryPath, 0o600);
-		await fs.rename(temporaryPath, filePath);
-		await tryChmod(filePath, 0o600);
+		targetPath = await fs.realpath(filePath);
+		mode = (await fs.stat(targetPath)).mode & 0o777;
+	} catch (error) {
+		if (!isFileMissing(error)) {
+			throw error;
+		}
+	}
+	await fs.mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
+	const temporaryPath = `${targetPath}.${process.pid}-${randomUUID()}.tmp`;
+	try {
+		await fs.writeFile(temporaryPath, content, { encoding: 'utf8', mode, flag: 'wx' });
+		await tryChmod(temporaryPath, mode);
+		await fs.rename(temporaryPath, targetPath);
 	} finally {
 		await fs.rm(temporaryPath, { force: true });
 	}

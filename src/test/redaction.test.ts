@@ -35,6 +35,43 @@ suite('Secret redaction', () => {
 		}
 	});
 
+	test('redacts credential formats common in prompts and config files', () => {
+		for (const [input, secret] of [
+			['AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENG', 'wJalrXUtnFEMIK7MDENG'],
+			['password: hunter2', 'hunter2'],
+			['client_secret: abc123', 'abc123'],
+			['api-key: q8Xk2mPz', 'q8Xk2mPz'],
+			['apiKey = "abc123"', 'abc123'],
+			['DATABASE_URL=postgres://admin:hunter2@db.local/app', 'hunter2'],
+			['mongodb://reader:s3cr3t@cluster.local', 's3cr3t'],
+			['curl -H "X-Auth: Bearer eyJhbGciOiJIUzI1NiJ9abcdef"', 'eyJhbGciOiJIUzI1NiJ9abcdef'],
+			['slack xoxb-1234567890-abcdefghij', 'xoxb-1234567890-abcdefghij'],
+			['aws AKIAIOSFODNN7EXAMPLE', 'AKIAIOSFODNN7EXAMPLE'],
+			['-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----', 'MIIEowIBAAKCAQEA'],
+			['password="unterminated secret\nnext line', 'unterminated secret'],
+		]) {
+			const result = redactSecrets(input);
+			assert.ok(!result.value.includes(secret), result.value);
+			assert.ok(result.replacementCount > 0, input);
+			assert.deepStrictEqual(redactSecrets(result.value), { value: result.value, replacementCount: 0 }, 'Redaction must be idempotent');
+		}
+		assert.ok(redactSecrets('password="unterminated secret\nnext line').value.endsWith('\nnext line'));
+	});
+
+	test('keeps prose and ordinary configuration that only mentions secret words', () => {
+		for (const input of ['Explain why the token: field is null', 'max_tokens: 4000', 'Set num_tokens to 4096', 'the Bearer token scheme', 'https://example.com/a:b@c']) {
+			assert.deepStrictEqual(redactSecrets(input), { value: input, replacementCount: 0 });
+		}
+	});
+
+	test('stays linear on long unbroken runs', () => {
+		for (const input of ['a'.repeat(100_000), 'ab-'.repeat(33_000), 'secret_'.repeat(14_000), '0123456789abcdef'.repeat(6_000), 'a.b'.repeat(33_000)]) {
+			const started = Date.now();
+			redactSecrets(input);
+			assert.ok(Date.now() - started < 250, `Redaction took ${Date.now() - started} ms for ${input.slice(0, 8)}…`);
+		}
+	});
+
 	test('leaves ordinary text unchanged', () => {
 		const result = redactSecrets('Run npm test and summarize the failures.');
 
