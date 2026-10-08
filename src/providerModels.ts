@@ -27,6 +27,10 @@ export const OFFICIAL_MODELS: readonly OfficialModel[] = [
 	{ label: 'GPT-5.4 nano', vendor: 'OpenAI', providers: ['copilot'] },
 	{ label: 'GPT-5.3-Codex', vendor: 'OpenAI', providers: ['copilot'] },
 	{ label: 'GPT-5 mini', vendor: 'OpenAI', providers: ['copilot'] },
+	// Claude 5.5 models verified on 2026-10-08 against the Copilot and Claude Code pages above.
+	{ label: 'Claude Opus 5.5', vendor: 'Anthropic', providers: ['copilot', 'claude'] },
+	{ label: 'Claude Sonnet 5.5', vendor: 'Anthropic', providers: ['copilot', 'claude'] },
+	{ label: 'Claude Haiku 5.5', vendor: 'Anthropic', providers: ['copilot', 'claude'] },
 	{ label: 'Claude Fable 5.1', vendor: 'Anthropic', providers: ['copilot', 'claude'] },
 	{ label: 'Claude Fable 5', vendor: 'Anthropic', providers: ['copilot', 'claude'] },
 	{ label: 'Claude Opus 5', vendor: 'Anthropic', providers: ['copilot', 'claude'] },

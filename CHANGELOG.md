@@ -13,6 +13,7 @@
 - Dashboard drafts stay with the folder they were typed in, and commands from a view of a previously active folder are ignored. **Analyze another** prefills any unsent draft.
 - Workbench: the "Case saved" notice no longer disappears straight away. An edited demo case counts as a real case once its content changes. A newly analyzed draft reaches an already-open workbench. Panel listeners are released when the panel closes. The 16 MiB history cap is measured on the bytes actually written.
 - When eligible benchmark evidence exists but the chosen harness is not Copilot, the recommendation now says so instead of claiming results are still being generated.
+- Added Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5 to the official provider catalog for Copilot and Claude Code, so prompts that name them route correctly.
 - The Delete Repository Data confirmation now states that curated cases and run history are deleted too.
 - Development: added `.vscode/tasks.json` (F5 previously failed on a missing build task), removed a broken Extension Tests launch configuration, added `npm run vsix`, and applied dev-dependency security fixes.
 
