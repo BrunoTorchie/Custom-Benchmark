@@ -19,6 +19,22 @@ suite('Secret redaction', () => {
 		assert.strictEqual(result.value.match(/\[REDACTED\]/g)?.length, 3);
 	});
 
+	test('redacts quoted environment values and JSON credentials without corrupting JSON', () => {
+		for (const input of [
+			'PASSWORD="synthetic secret with spaces"',
+			"API_KEY='synthetic secret with spaces'",
+			'{"password":"synthetic secret with spaces","safe":"keep me"}',
+			JSON.stringify({ password: 'synthetic secret "with quotes"', safe: 'keep me' }),
+		]) {
+			const result = redactSecrets(input);
+			assert.ok(!result.value.includes('synthetic secret'));
+			assert.strictEqual(result.replacementCount, 1);
+			if (input.startsWith('{')) {
+				assert.deepStrictEqual(JSON.parse(result.value), { password: '[REDACTED]', safe: 'keep me' });
+			}
+		}
+	});
+
 	test('leaves ordinary text unchanged', () => {
 		const result = redactSecrets('Run npm test and summarize the failures.');
 

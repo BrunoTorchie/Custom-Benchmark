@@ -15,3 +15,6 @@ out/
 .DS_Store
 Thumbs.db
 *.log
+
+# Demo and launch videos (local only)
+videos/

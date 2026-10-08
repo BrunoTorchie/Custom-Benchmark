@@ -1,3 +1,4 @@
+import { isModelOfferedByProvider } from './providerModels';
 import { createHash } from 'node:crypto';
 
 import { ProviderStatus } from './model';
@@ -6,12 +7,13 @@ import {
 	ModelSelectionBasis,
 	RegisteredModelPerformance,
 	selectModelProfile,
+	findExplicitlyRequestedProfiles,
 } from './modelSelection';
 import { redactSecrets } from './redaction';
 
 export type PromptSource = 'manual' | 'vscode' | 'claude' | 'codex';
 export type RecommendationTaskType = ModelTaskType;
-export const RECOMMENDATION_ENGINE_VERSION = 2 as const;
+export const RECOMMENDATION_ENGINE_VERSION = 3 as const;
 
 export interface LiveRecommendation {
 	engineVersion: typeof RECOMMENDATION_ENGINE_VERSION;
@@ -168,9 +170,12 @@ export function recommendModel(
 	const installedProviderIds = new Set(
 		providers.filter((provider) => provider.installed).map((provider) => provider.id),
 	);
-	const providerId = rankedProviders.find(([candidate]) => installedProviderIds.has(candidate))?.[0]
+	const requestedProfiles = findExplicitlyRequestedProfiles(prompt);
+	const requestedProvider = rankedProviders.find(([candidate]) => installedProviderIds.has(candidate)
+		&& requestedProfiles.some((profile) => isModelOfferedByProvider(profile.modelLabel, candidate)))?.[0];
+	const providerId = requestedProvider ?? rankedProviders.find(([candidate]) => installedProviderIds.has(candidate))?.[0]
 		?? preferredProviderId;
-	const fallbackApplied = providerId !== preferredProviderId;
+	const fallbackApplied = requestedProvider === undefined && providerId !== preferredProviderId;
 	const taskType = (Object.entries(taskScores) as Array<[RecommendationTaskType, number]>)
 		.sort((left, right) => right[1] - left[1])[0][0];
 	const scoreMargin = rankedProviders[0][1] - rankedProviders[1][1];

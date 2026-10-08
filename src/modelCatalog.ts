@@ -1,4 +1,6 @@
-export type ModelVendor = 'Anthropic' | 'Google' | 'OpenAI';
+import { OFFICIAL_MODELS, OfficialModelVendor, PROVIDER_MODEL_SNAPSHOT } from './providerModels';
+
+export type ModelVendor = OfficialModelVendor;
 export type ReasoningEffort = 'standard' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'adaptive';
 export type ModelTaskType =
 	| 'Architecture'
@@ -22,7 +24,7 @@ export interface ArtificialAnalysisMetrics {
 	outputTokensPerSecond?: number;
 	timeToFirstAnswerSeconds?: number;
 	endToEndResponseSeconds?: number;
-	contextWindowTokens: number;
+	contextWindowTokens?: number;
 }
 
 export interface ModelProfile {
@@ -46,22 +48,22 @@ export const ARTIFICIAL_ANALYSIS_SNAPSHOT = {
 
 const ONE_MILLION_TOKENS = 1_000_000;
 
-export const MODEL_PROFILES: readonly ModelProfile[] = [
-	openAiProfile('gpt-5-6-luna-low', 'GPT 5.6 Luna', 'Low reasoning', 'low', 26, undefined, 104, 1.77, 6.57, true),
-	openAiProfile('gpt-5-6-luna-medium', 'GPT 5.6 Luna', 'Medium reasoning', 'medium', 30, undefined, 107, 3.79, 8.46, true),
-	openAiProfile('gpt-5-6-luna-high', 'GPT 5.6 Luna', 'High reasoning', 'high', 37, undefined, 124, 22.24, 26.27, true),
-	openAiProfile('gpt-5-6-luna-xhigh', 'GPT 5.6 Luna', 'XHigh reasoning', 'xhigh', 42, 0.06, 128, 66.40, 70.31),
-	openAiProfile('gpt-5-6-terra-low', 'GPT 5.6 Terra', 'Low reasoning', 'low', 32, undefined, 89, 1.84, 7.47, true),
-	openAiProfile('gpt-5-6-terra-medium', 'GPT 5.6 Terra', 'Medium reasoning', 'medium', 37, undefined, 87, 1.67, 7.43, true),
-	openAiProfile('gpt-5-6-terra-high', 'GPT 5.6 Terra', 'High reasoning', 'high', 41, 0.30, 97, 3.67, 8.83),
-	openAiProfile('gpt-5-6-terra-xhigh', 'GPT 5.6 Terra', 'XHigh reasoning', 'xhigh', 44, 0.50, 102, 55.63, 60.53),
-	openAiProfile('gpt-5-6-sol-low', 'GPT 5.6 Sol', 'Low reasoning', 'low', 41, 0.23, 74, 3.28, 10.05),
-	openAiProfile('gpt-5-6-sol-medium', 'GPT 5.6 Sol', 'Medium reasoning', 'medium', 46, 0.37, 72, 6.41, 13.34),
-	openAiProfile('gpt-5-6-sol-high', 'GPT 5.6 Sol', 'High reasoning', 'high', 48, 0.61, 73, 17.87, 24.68),
-	openAiProfile('gpt-5-6-sol-xhigh', 'GPT 5.6 Sol', 'XHigh reasoning', 'xhigh', 50, 0.89, 82, 64.00, 70.10),
+const MEASURED_PROFILES: readonly ModelProfile[] = [
+	openAiProfile('gpt-5-6-luna-low', 'GPT-5.6 Luna', 'Low reasoning', 'low', 26, undefined, 104, 1.77, 6.57, true),
+	openAiProfile('gpt-5-6-luna-medium', 'GPT-5.6 Luna', 'Medium reasoning', 'medium', 30, undefined, 107, 3.79, 8.46, true),
+	openAiProfile('gpt-5-6-luna-high', 'GPT-5.6 Luna', 'High reasoning', 'high', 37, undefined, 124, 22.24, 26.27, true),
+	openAiProfile('gpt-5-6-luna-xhigh', 'GPT-5.6 Luna', 'XHigh reasoning', 'xhigh', 42, 0.06, 128, 66.40, 70.31),
+	openAiProfile('gpt-5-6-terra-low', 'GPT-5.6 Terra', 'Low reasoning', 'low', 32, undefined, 89, 1.84, 7.47, true),
+	openAiProfile('gpt-5-6-terra-medium', 'GPT-5.6 Terra', 'Medium reasoning', 'medium', 37, undefined, 87, 1.67, 7.43, true),
+	openAiProfile('gpt-5-6-terra-high', 'GPT-5.6 Terra', 'High reasoning', 'high', 41, 0.30, 97, 3.67, 8.83),
+	openAiProfile('gpt-5-6-terra-xhigh', 'GPT-5.6 Terra', 'XHigh reasoning', 'xhigh', 44, 0.50, 102, 55.63, 60.53),
+	openAiProfile('gpt-5-6-sol-low', 'GPT-5.6 Sol', 'Low reasoning', 'low', 41, 0.23, 74, 3.28, 10.05),
+	openAiProfile('gpt-5-6-sol-medium', 'GPT-5.6 Sol', 'Medium reasoning', 'medium', 46, 0.37, 72, 6.41, 13.34),
+	openAiProfile('gpt-5-6-sol-high', 'GPT-5.6 Sol', 'High reasoning', 'high', 48, 0.61, 73, 17.87, 24.68),
+	openAiProfile('gpt-5-6-sol-xhigh', 'GPT-5.6 Sol', 'XHigh reasoning', 'xhigh', 50, 0.89, 82, 64.00, 70.10),
 	{
 		id: 'gemini-3-8-flash-high',
-		modelLabel: 'Gemini 3.8 Flash High',
+		modelLabel: 'Gemini 3.8 Flash',
 		vendor: 'Google',
 		profileLabel: 'High reasoning',
 		reasoningEffort: 'high',
@@ -86,7 +88,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
 	},
 	{
 		id: 'gpt-6-astra',
-		modelLabel: 'GPT 6 Astra',
+		modelLabel: 'GPT-6 Astra',
 		vendor: 'OpenAI',
 		profileLabel: 'Max reasoning',
 		reasoningEffort: 'max',
@@ -213,3 +215,18 @@ function metrics(
 		contextWindowTokens: ONE_MILLION_TOKENS,
 	};
 }
+// Officially offered models without benchmark evidence remain explicitly selectable.
+// Do not invent measurements or rank them as measured recommendations.
+export const MODEL_PROFILES: readonly ModelProfile[] = [
+	...MEASURED_PROFILES,
+	...OFFICIAL_MODELS.filter((model) => !MEASURED_PROFILES.some((profile) => profile.modelLabel === model.label))
+		.map((model): ModelProfile => ({
+			id: model.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, ''),
+			modelLabel: model.label,
+			vendor: model.vendor,
+			profileLabel: 'Provider defaults · not benchmarked',
+			reasoningEffort: 'standard',
+			modelPageUrl: PROVIDER_MODEL_SNAPSHOT[model.providers[0]],
+			artificialAnalysis: {},
+		})),
+];

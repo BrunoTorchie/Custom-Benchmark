@@ -2,7 +2,7 @@
   "name": "personal-benchmark",
   "displayName": "Personal Benchmark",
   "description": "A local-first VS Code extension for capturing opted-in AI coding work and curating a private, personal LLM benchmark.",
-  "version": "0.0.12",
+  "version": "0.1.0",
   "publisher": "techtorch",
   "author": {
     "name": "Bruno Manzano"
@@ -154,7 +154,7 @@
           "default": 90,
           "minimum": 1,
           "maximum": 365,
-          "description": "Days to retain raw traces that have not been promoted to benchmark cases."
+          "description": "Days to keep captured ledger events. Older events are deleted at startup, every six hours, and when this setting changes. Curated benchmark cases and run history are not affected."
         }
       }
     }
@@ -166,6 +166,7 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "vsix": "npx --yes @vscode/vsce@3.9.2 package",
     "compile-tests": "npm run generate-provider-icons && tsc -p . --outDir out",
     "generate-provider-icons": "node generate-provider-icons.mjs",
     "watch-tests": "tsc -p . -w --outDir out",

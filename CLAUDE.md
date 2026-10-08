@@ -28,11 +28,15 @@ Two bundles come out of [esbuild.js](esbuild.js):
 These are load-bearing. Tests cover each one; do not weaken them.
 
 - **Capture is opt-in per folder.** Off is the default. The hook bridge rejects any prompt whose repository is outside the canonical allowlist, before writing any bytes.
-- **Redaction happens before persistence.** [src/redaction.ts](src/redaction.ts) runs on every path that writes. Full prompt text is never persisted — only a redacted preview of at most 180 characters, a SHA-256 hash, and derived routing fields.
-- **Nothing is uploaded.** There is no network path in this extension. Keep it that way.
-- **Nothing is auto-submitted.** The handoff copies the draft and opens the harness. Copilot gets an unsent prefill via VS Code's partial-query command; Claude Code and Codex expose no supported prefill API, so the draft goes to the clipboard.
+- **Redaction happens before persistence.** Captured prompts persist only a preview of at most 180 characters, a SHA-256 hash, and derived fields. Explicitly curated benchmark cases persist their full redacted prompt and checks after the user confirms local storage. Run answer previews are redacted and bounded.
+- **Capture and recommendation are local.** Only an explicit reviewed benchmark run sends selected curated prompts through VS Code’s Language Model API. Do not attach repository files, captured traces, checks, or expected answers.
+- **Handoff never auto-submits.** Benchmark execution is a separate, explicitly reviewed action. The handoff copies the draft and opens the harness. Copilot gets an unsent prefill via VS Code's partial-query command; Claude Code and Codex expose no supported prefill API, so the draft goes to the clipboard.
 - **Hook edits are transactional.** [src/promptHookFiles.ts](src/promptHookFiles.ts) validates every target file before changing any of them, preserves unrelated settings and hooks, and removes only handlers it marked as its own.
 - **The dashboard fits a narrow sidebar.** Layout is validated at 220×610 and 300×610.
+
+## Scored benchmarks
+
+`src/benchmark.ts` owns case validation, scoring, bounded run history, cancellation and recommendation evidence. `src/benchmarkPanel.ts` owns the workbench and the Language Model API adapter. A run uses provider-default model settings and records vendor, opaque model ID and version. Scores measure declared text/JSON checks, not repository test execution. Demo/synthetic cases, partial runs and errors are excluded from recommendation evidence; three distinct unchanged cases of one task type are required. Preserve those exclusions when adding executors or graders.
 
 ## Conventions
 

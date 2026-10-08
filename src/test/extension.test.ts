@@ -84,7 +84,7 @@ suite('Personal Benchmark model', () => {
 		assert.ok(html.includes('data-recommendation-field="harness"'));
 		assert.ok(html.includes('HARNESS · Codex'));
 		assert.ok(html.includes('data-recommendation-field="model"'));
-		assert.ok(html.includes('GPT 6 Astra'));
+		assert.ok(html.includes('GPT-6 Astra'));
 		assert.ok(html.includes('Max reasoning'));
 		assert.ok(html.includes('data-recommendation-field="basis"'));
 		assert.ok(html.includes('MODEL · AA HEURISTIC'));
@@ -245,14 +245,14 @@ suite('Captured event ledger', () => {
 				occurredAt: '2026-09-06T12:00:00.000Z',
 				kind: 'prompt.recommended',
 				payload: {
-					modelLabel: 'GPT 6 Astra',
+					modelLabel: 'GPT-6 Astra',
 					profileLabel: 'Max reasoning',
 					taskType: 'Debugging',
 					source: 'codex',
 					confidence: 0.81,
 				},
 			}),
-			'GPT 6 Astra · Max reasoning · Debugging · codex',
+			'GPT-6 Astra · Max reasoning · Debugging · codex',
 		);
 
 		assert.strictEqual(

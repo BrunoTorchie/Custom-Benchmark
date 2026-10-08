@@ -19,3 +19,4 @@ resources/icon-source.svg
 **/*.map
 **/*.ts
 **/.DS_Store
+videos/**

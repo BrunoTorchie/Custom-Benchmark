@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { CaptureMode, deriveCaptureMode } from './model';
 import { LiveRecommendation, PromptSource, recommendModel } from './recommendation';
 import { redactSecrets } from './redaction';
+import { BenchmarkRepository, registeredBenchmarkPerformance } from './benchmark';
 
 const REPOSITORY_STATE_KEY = 'personalBenchmark.repositoryStates.v1';
 
@@ -53,15 +54,30 @@ export function parseEventLog(contents: string): StoredEvent[] {
 	return events.reverse();
 }
 
+/** Unparseable lines are never treated as expired, so a purge cannot delete what it cannot read. */
+function isExpiredEventLine(line: string, cutoff: number): boolean {
+	try {
+		const occurredAt = Date.parse((JSON.parse(line) as StoredEvent).occurredAt);
+		return Number.isFinite(occurredAt) && occurredAt < cutoff;
+	} catch {
+		return false;
+	}
+}
+
 export class LocalStore {
+	private mutationQueue: Promise<void> = Promise.resolve();
+	private readonly benchmarkRepositories = new Map<string, BenchmarkRepository>();
+	private readonly transientRecommendations = new Map<string, LiveRecommendation>();
+
 	constructor(private readonly context: vscode.ExtensionContext) {}
 
 	getRepositoryState(folder: vscode.WorkspaceFolder): RepositoryState {
-		return this.getStates()[folder.uri.toString()] ?? {
+		const state = this.getStates()[folder.uri.toString()] ?? {
 			enabled: false,
 			paused: false,
 			eventCount: 0,
 		};
+		return { ...state, recommendation: this.transientRecommendations.get(folder.uri.toString()) ?? state.recommendation };
 	}
 
 	getCaptureMode(folder: vscode.WorkspaceFolder): CaptureMode {
@@ -70,7 +86,11 @@ export class LocalStore {
 	}
 
 	async enable(folder: vscode.WorkspaceFolder): Promise<void> {
-		const previous = this.getRepositoryState(folder);
+		return this.mutate(() => this.enableNow(folder));
+	}
+
+	private async enableNow(folder: vscode.WorkspaceFolder): Promise<void> {
+		const previous = this.getPersistedRepositoryState(folder);
 		await this.updateState(folder, {
 			...previous,
 			enabled: true,
@@ -83,7 +103,11 @@ export class LocalStore {
 	}
 
 	async setPaused(folder: vscode.WorkspaceFolder, paused: boolean): Promise<void> {
-		const previous = this.getRepositoryState(folder);
+		return this.mutate(() => this.setPausedNow(folder, paused));
+	}
+
+	private async setPausedNow(folder: vscode.WorkspaceFolder, paused: boolean): Promise<void> {
+		const previous = this.getPersistedRepositoryState(folder);
 		if (!previous.enabled) {
 			return;
 		}
@@ -93,12 +117,20 @@ export class LocalStore {
 	}
 
 	async disable(folder: vscode.WorkspaceFolder): Promise<void> {
-		const previous = this.getRepositoryState(folder);
+		return this.mutate(() => this.disableNow(folder));
+	}
+
+	private async disableNow(folder: vscode.WorkspaceFolder): Promise<void> {
+		const previous = this.getPersistedRepositoryState(folder);
 		await this.updateState(folder, { ...previous, enabled: false, paused: false });
 		await this.appendEvent(folder, 'repository.disabled');
 	}
 
 	async recordPreviewEvent(folder: vscode.WorkspaceFolder): Promise<void> {
+		return this.mutate(() => this.recordPreviewEventNow(folder));
+	}
+
+	private async recordPreviewEventNow(folder: vscode.WorkspaceFolder): Promise<void> {
 		if (this.getCaptureMode(folder) !== 'capturing') {
 			throw new Error('Capture must be enabled and running before recording an event.');
 		}
@@ -114,7 +146,12 @@ export class LocalStore {
 		providers: readonly import('./model').ProviderStatus[],
 		source: PromptSource,
 	): Promise<LiveRecommendation> {
-		const recommendation = recommendModel(prompt, providers, source);
+		let performance: import('./modelSelection').RegisteredModelPerformance[] = [];
+		let benchmarkUnavailable = false;
+		try { performance = registeredBenchmarkPerformance(await this.benchmarks(folder).read()); }
+		catch { benchmarkUnavailable = true; }
+		const recommendation = recommendModel(prompt, providers, source, new Date(), performance);
+		if (benchmarkUnavailable) { recommendation.modelSelectionNote += ' Local benchmark data could not be read; no saved scores were used.'; }
 		await this.recordRecommendation(folder, recommendation);
 		return recommendation;
 	}
@@ -123,7 +160,20 @@ export class LocalStore {
 		folder: vscode.WorkspaceFolder,
 		recommendation: LiveRecommendation,
 	): Promise<void> {
-		const previous = this.getRepositoryState(folder);
+		return this.mutate(async () => {
+			if (this.getCaptureMode(folder) !== 'capturing') {
+				if (recommendation.source === 'manual') {
+					this.transientRecommendations.set(folder.uri.toString(), recommendation);
+				}
+				return;
+			}
+			await this.recordRecommendationNow(folder, recommendation);
+		});
+	}
+
+	private async recordRecommendationNow(folder: vscode.WorkspaceFolder, recommendation: LiveRecommendation): Promise<void> {
+		this.transientRecommendations.delete(folder.uri.toString());
+		const previous = this.getPersistedRepositoryState(folder);
 		await this.updateState(folder, { ...previous, recommendation });
 		await this.appendEvent(folder, 'prompt.recommended', {
 			providerId: recommendation.providerId,
@@ -136,6 +186,16 @@ export class LocalStore {
 			promptHash: recommendation.promptHash,
 			source: recommendation.source,
 		});
+	}
+
+	benchmarks(folder: vscode.WorkspaceFolder): BenchmarkRepository {
+		const key = folder.uri.toString();
+		let repository = this.benchmarkRepositories.get(key);
+		if (!repository) {
+			repository = new BenchmarkRepository(path.join(this.getRepositoryDirectory(folder), 'benchmark.json'));
+			this.benchmarkRepositories.set(key, repository);
+		}
+		return repository;
 	}
 
 	async readEvents(folder: vscode.WorkspaceFolder): Promise<StoredEvent[]> {
@@ -170,10 +230,68 @@ export class LocalStore {
 	}
 
 	async deleteRepositoryData(folder: vscode.WorkspaceFolder): Promise<void> {
+		return this.mutate(() => this.deleteRepositoryDataNow(folder));
+	}
+
+	private async deleteRepositoryDataNow(folder: vscode.WorkspaceFolder): Promise<void> {
+		this.transientRecommendations.delete(folder.uri.toString());
 		const states = this.getStates();
 		delete states[folder.uri.toString()];
 		await this.context.globalState.update(REPOSITORY_STATE_KEY, states);
 		await fs.rm(this.getRepositoryDirectory(folder), { recursive: true, force: true });
+	}
+
+	/** Drops ledger events older than the retention window. Returns how many were removed. */
+	async purgeExpiredEvents(retentionDays: number, now = new Date()): Promise<number> {
+		if (!Number.isFinite(retentionDays) || retentionDays < 1) {
+			return 0;
+		}
+
+		let removed = 0;
+		await this.mutate(async () => {
+			const cutoff = now.getTime() - retentionDays * 24 * 60 * 60 * 1_000;
+			for (const uri of Object.keys(this.getStates())) {
+				const eventPath = path.join(this.getRepositoryDirectoryForUri(uri), 'events.jsonl');
+				let contents: string;
+				try {
+					contents = await fs.readFile(eventPath, 'utf8');
+				} catch {
+					continue;
+				}
+
+				const lines = contents.split('\n').filter((line) => line.trim() !== '');
+				const kept = lines.filter((line) => !isExpiredEventLine(line, cutoff));
+				if (kept.length === lines.length) {
+					continue;
+				}
+
+				const temporaryPath = `${eventPath}.${randomUUID()}.tmp`;
+				try {
+					await fs.writeFile(temporaryPath, kept.map((line) => `${line}\n`).join(''), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+					await fs.rename(temporaryPath, eventPath);
+				} finally {
+					await fs.rm(temporaryPath, { force: true });
+				}
+				removed += lines.length - kept.length;
+
+				const states = this.getStates();
+				if (states[uri]) {
+					states[uri] = { ...states[uri], eventCount: parseEventLog(kept.join('\n')).length };
+					await this.context.globalState.update(REPOSITORY_STATE_KEY, states);
+				}
+			}
+		});
+		return removed;
+	}
+
+	private mutate(action: () => Promise<void>): Promise<void> {
+		const result = this.mutationQueue.then(action);
+		this.mutationQueue = result.catch(() => {});
+		return result;
+	}
+
+	private getPersistedRepositoryState(folder: vscode.WorkspaceFolder): RepositoryState {
+		return this.getStates()[folder.uri.toString()] ?? { enabled: false, paused: false, eventCount: 0 };
 	}
 
 	private getStates(): RepositoryStateMap {
@@ -219,12 +337,16 @@ export class LocalStore {
 		await fs.appendFile(eventPath, `${JSON.stringify(safeEvent)}\n`, { encoding: 'utf8', mode: 0o600 });
 		await this.tryChmod(eventPath, 0o600);
 
-		const state = this.getRepositoryState(folder);
+		const state = this.getPersistedRepositoryState(folder);
 		await this.updateState(folder, { ...state, eventCount: state.eventCount + 1 });
 	}
 
 	private getRepositoryDirectory(folder: vscode.WorkspaceFolder): string {
-		const repositoryId = createHash('sha256').update(folder.uri.toString()).digest('hex').slice(0, 16);
+		return this.getRepositoryDirectoryForUri(folder.uri.toString());
+	}
+
+	private getRepositoryDirectoryForUri(uri: string): string {
+		const repositoryId = createHash('sha256').update(uri).digest('hex').slice(0, 16);
 		return path.join(this.context.globalStorageUri.fsPath, 'repositories', repositoryId);
 	}
 

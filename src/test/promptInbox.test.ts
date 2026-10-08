@@ -52,6 +52,34 @@ suite('Prompt inbox', () => {
 		assert.deepStrictEqual(await fs.readdir(temporaryDirectory), []);
 	});
 
+	test('does not steal an old item while another consumer is still processing it', async () => {
+		await writeItem('slow.json');
+		const oldDate = new Date(Date.now() - 60_000);
+		await fs.utimes(path.join(temporaryDirectory, 'slow.json'), oldDate, oldDate);
+		let release!: () => void;
+		let started!: () => void;
+		const processing = new Promise<void>((resolve) => { started = resolve; });
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		let calls = 0;
+		const first = drainPromptInbox(temporaryDirectory, async () => {
+			calls += 1;
+			started();
+			await gate;
+			return true;
+		});
+		await processing;
+		try {
+			await drainPromptInbox(temporaryDirectory, async () => {
+				calls += 1;
+				return true;
+			});
+		} finally {
+			release();
+			await first;
+		}
+		assert.strictEqual(calls, 1, 'An active claim must not be processed twice');
+	});
+
 	async function writeItem(fileName: string): Promise<void> {
 		const recommendation = recommendModel(
 			'Fix the failing tests and verify the patch.',

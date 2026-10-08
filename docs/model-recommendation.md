@@ -1,6 +1,6 @@
 # Model Recommendation
 
-Date: 2026-09-06
+Official availability checked: 2026-09-18. Benchmark measurements: 2026-09-06.
 
 The extension recommends a harness and a model separately. Harness routing answers where the task should run (Copilot, Claude Code, or Codex). Model routing answers which model profile should handle it. An installed extension proves only that a harness is present; it does not prove that every recommended model is enabled in that harness or account.
 
@@ -8,11 +8,13 @@ The extension recommends a harness and a model separately. Harness routing answe
 
 Model selection uses the following precedence:
 
-1. **Explicit request.** A model family and optional reasoning effort named in the prompt wins.
+1. **Explicit request.** A supported model family and optional catalog reasoning profile named in the prompt wins. Routing prefers an installed harness that officially offers that model.
 2. **Registered Personal Benchmark results.** A profile becomes eligible after at least three comparable local cases for the detected task type. Candidates are ranked by `score - 10 / sqrt(sample size)` so one lucky small sample does not immediately dominate.
 3. **Artificial Analysis heuristic.** Until enough local results exist, the extension combines prompt signals, task-fit priors, and a frozen Artificial Analysis snapshot.
 
-The current preview does not yet promote completed episodes into scored benchmark cases, so normal recommendations use step 3. The dashboard labels these recommendations `MODEL - AA HEURISTIC` and states that registered Personal Benchmark results are still being generated. The selection is local and deterministic; the extension makes no request to Artificial Analysis while analyzing a prompt.
+The workbench now supplies registered results to preflight recommendations. The latest completed, non-demo comparison containing at least three distinct unchanged cases of a task type is eligible. Every compared model must have scored all those cases. Re-running the same case does not increase sample size; demo/synthetic cases, failed/cancelled/interrupted runs and changed/deleted cases do not count. Model identity comes from the actual VS Code provider (vendor, model ID and version); provider-default settings are labelled explicitly rather than pretending they match a frozen catalog reasoning profile.
+
+Until eligible evidence exists, the dashboard labels the fallback `MODEL - AA HEURISTIC`. Recommendation itself remains local and deterministic. Post-submit hook recommendations still use the frozen fallback because the hook bridge has no benchmark corpus access. See [benchmark-execution.md](benchmark-execution.md) for scoring and execution boundaries.
 
 ## Preflight Workflow
 
@@ -101,8 +103,8 @@ The fallback gives a small bonus when published coding-agent evidence matches th
 
 | Prompt shape | Current fallback |
 | --- | --- |
-| Short explanation or naming task | Gemini 3.5 Flash Lite |
-| Routine or visual implementation | Gemini 3.8 Flash High |
+| Short explanation or naming task | Gemini 3.8 Flash high on Copilot |
+| Routine implementation | Provider-filtered measured profile (OpenAI on Codex) |
 | Repository debugging and test loop | GPT 6 Astra max |
 | Cross-cutting architecture | Claude Fable 5.1 max with fallback |
 | Security or critical review | Claude Opus 5 XHigh |
@@ -114,7 +116,7 @@ These are fallback defaults, not permanent winners. A named model request wins i
 
 - Artificial Analysis is a broad, primarily English-language benchmark. It cannot measure the developer's repositories, preferences, correction burden, or acceptance criteria.
 - Coding Agent Index observations conflate model and harness. The extension therefore reports the harness and model separately.
-- Provider extension detection does not currently enumerate account-level model entitlements. A recommendation can name a model that the selected harness cannot invoke.
+- Provider extension detection does not currently enumerate account-level model entitlements. Recommendations are filtered by documented provider offerings, but account entitlements are not verified. VS Code benchmark results apply only to the Copilot/VS Code route.
 - The source snapshot will age. Refreshing it should be an explicit, reviewed data update rather than a live network dependency in the private prompt path.
 - Latency and cost are benchmark workload aggregates. They are useful for relative fallback ranking, not estimates of a user's exact bill or completion time.
 - The heuristic score is an ordering mechanism, not a probability that the model will solve the task.
@@ -125,4 +127,18 @@ These are fallback defaults, not permanent winners. A named model request wins i
 - [Artificial Analysis model comparison](https://artificialanalysis.ai/models)
 - [Intelligence benchmarking methodology](https://artificialanalysis.ai/methodology/intelligence-benchmarking)
 - [Coding Agent Index](https://artificialanalysis.ai/agents/coding-agents)
-- Individual model pages linked from the catalog in `extension/src/modelCatalog.ts`
+- Individual model pages linked from the catalog in `src/modelCatalog.ts`
+
+## Official provider catalog
+
+`src/providerModels.ts` maintains the dated product-availability snapshot separately from Artificial Analysis measurements. The workbench displays all documented offerings by provider under **Official provider models**. **Runnable models** are discovered through VS Code and may be a smaller or customized set; listing Claude Code or Codex does not create an execution adapter for either extension.
+
+Official models without measurements are labelled “Provider defaults · not benchmarked” and can be explicitly requested; they receive no fabricated benchmark values and are excluded from measured heuristic defaults. Reasoning labels on measured profiles describe the evaluated configuration, not every effort supported by the provider. Opus 4.8's Artificial Analysis deprecation flag is not a claim that the providers retired it. Historical Gemini 3.5 Flash Lite measurements remain in the frozen data but are excluded from these providers' recommendations.
+
+Codex's default catalog follows ChatGPT sign-in availability: GPT-5.4 and GPT-5.4 mini retired there on August 31; API-key availability is separate. GPT-5.5 remains listed until its announced October 14 retirement. This snapshot requires maintenance when offerings change; it is not an automatic entitlement feed.
+
+Official sources:
+
+- [GitHub Copilot supported models](https://docs.github.com/en/copilot/reference/ai-models/supported-models)
+- [Claude Code model configuration](https://code.claude.com/docs/en/model-config)
+- [Codex models](https://learn.chatgpt.com/docs/models)

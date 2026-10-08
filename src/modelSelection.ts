@@ -1,3 +1,4 @@
+import { isModelOfferedByProvider, PROVIDER_MODEL_SNAPSHOT } from './providerModels';
 import { ProviderStatus } from './model';
 import {
 	ARTIFICIAL_ANALYSIS_SNAPSHOT,
@@ -11,13 +12,15 @@ export type ModelSelectionBasis = 'explicit-request' | 'registered-benchmark' | 
 
 export interface RegisteredModelPerformance {
 	modelProfileId: string;
+	modelLabel?: string;
+	profileLabel?: string;
 	taskType: ModelTaskType;
 	sampleSize: number;
 	score: number;
 }
 
 export interface ModelSelection {
-	profile: ModelProfile;
+	profile: Pick<ModelProfile, 'id' | 'modelLabel' | 'profileLabel'>;
 	basis: ModelSelectionBasis;
 	note: string;
 }
@@ -75,7 +78,9 @@ export function selectModelProfile(
 	providerId: ProviderStatus['id'],
 	registeredPerformance: readonly RegisteredModelPerformance[] = [],
 ): ModelSelection {
-	const explicitlyRequested = findExplicitlyRequestedProfiles(prompt);
+	const availableProfiles = MODEL_PROFILES.filter((profile) => isModelOfferedByProvider(profile.modelLabel, providerId));
+	const requestedProfiles = findExplicitlyRequestedProfiles(prompt);
+	const explicitlyRequested = requestedProfiles.filter((profile) => availableProfiles.includes(profile));
 	if (explicitlyRequested.length > 0) {
 		const profile = rankProfiles(explicitlyRequested, prompt, taskType, providerId)[0];
 		return {
@@ -85,13 +90,15 @@ export function selectModelProfile(
 		};
 	}
 
-	const registeredWinner = selectFromRegisteredPerformance(taskType, registeredPerformance);
+	const registeredWinner = selectFromRegisteredPerformance(taskType, registeredPerformance, providerId);
 	if (registeredWinner) {
 		return registeredWinner;
 	}
 
+	// Evidence measured through VS Code models exists but cannot be used on this harness.
+	const inapplicableEvidence = registeredPerformance.some((entry) => entry.taskType === taskType && isUsableRegisteredPerformance(entry));
 	const profile = rankProfiles(
-		MODEL_PROFILES.filter((candidate) => !candidate.deprecated),
+		availableProfiles.filter((candidate) => !candidate.deprecated && candidate.artificialAnalysis.intelligenceIndex !== undefined),
 		prompt,
 		taskType,
 		providerId,
@@ -99,23 +106,26 @@ export function selectModelProfile(
 	return {
 		profile,
 		basis: 'artificial-analysis-heuristic',
-		note: buildArtificialAnalysisNote(profile, taskType),
+		note: `${buildArtificialAnalysisNote(profile, taskType, inapplicableEvidence ? providerId : undefined)} Official provider catalog checked ${PROVIDER_MODEL_SNAPSHOT.checkedAt}; account access may vary.${requestedProfiles.length > 0 ? ` The requested model is not listed for ${providerId}; selected a supported alternative.` : ''}`,
 	};
 }
 
 function selectFromRegisteredPerformance(
 	taskType: ModelTaskType,
 	registeredPerformance: readonly RegisteredModelPerformance[],
+	providerId: ProviderStatus['id'],
 ): ModelSelection | undefined {
 	const ranked = registeredPerformance
 		.filter((entry) => entry.taskType === taskType)
 		.filter(isUsableRegisteredPerformance)
 		.map((entry) => ({
 			entry,
-			profile: MODEL_PROFILES.find((profile) => profile.id === entry.modelProfileId),
+			profile: MODEL_PROFILES.find((profile) => profile.id === entry.modelProfileId && isModelOfferedByProvider(profile.modelLabel, providerId))
+				?? (providerId === 'copilot' && entry.modelProfileId.startsWith('vscode:') && entry.modelLabel && entry.profileLabel
+					? { id: entry.modelProfileId, modelLabel: entry.modelLabel, profileLabel: entry.profileLabel } : undefined),
 			adjustedScore: entry.score - (10 / Math.sqrt(entry.sampleSize)),
 		}))
-		.filter((candidate): candidate is typeof candidate & { profile: ModelProfile } => candidate.profile !== undefined)
+		.filter((candidate): candidate is typeof candidate & { profile: ModelSelection['profile'] } => candidate.profile !== undefined)
 		.sort((left, right) => right.adjustedScore - left.adjustedScore
 			|| right.entry.sampleSize - left.entry.sampleSize
 			|| left.profile.id.localeCompare(right.profile.id));
@@ -140,11 +150,11 @@ function isUsableRegisteredPerformance(entry: RegisteredModelPerformance): boole
 		&& entry.score <= 100;
 }
 
-function findExplicitlyRequestedProfiles(prompt: string): ModelProfile[] {
+export function findExplicitlyRequestedProfiles(prompt: string): ModelProfile[] {
 	const normalizedPrompt = normalizeWords(prompt);
 	const modelLabels = [...new Set(MODEL_PROFILES.map((profile) => profile.modelLabel))]
 		.sort((left, right) => right.length - left.length);
-	const requestedLabel = modelLabels.find((label) => normalizedPrompt.includes(normalizeWords(label)));
+	const requestedLabel = modelLabels.find((label) => new RegExp(`(?:^| )${normalizeWords(label)}(?= |$)(?! [0-9])`).test(normalizedPrompt));
 	if (!requestedLabel) {
 		return [];
 	}
@@ -225,7 +235,7 @@ function scoreProfile(
 	return score;
 }
 
-function buildArtificialAnalysisNote(profile: ModelProfile, taskType: ModelTaskType): string {
+function buildArtificialAnalysisNote(profile: ModelProfile, taskType: ModelTaskType, inapplicableEvidenceProvider?: ProviderStatus['id']): string {
 	const metrics = profile.artificialAnalysis;
 	const facts = [
 		metrics.intelligenceIndex === undefined ? undefined : `Intelligence ${metrics.intelligenceIndex}`,
@@ -235,7 +245,11 @@ function buildArtificialAnalysisNote(profile: ModelProfile, taskType: ModelTaskT
 		metrics.outputTokensPerSecond === undefined ? undefined : `${Math.round(metrics.outputTokensPerSecond)} output tokens/s`,
 	].filter((fact): fact is string => fact !== undefined);
 
-	return `Registered Personal Benchmark results are still being generated. Using prompt signals and the ${ARTIFICIAL_ANALYSIS_SNAPSHOT.capturedAt} Artificial Analysis v${ARTIFICIAL_ANALYSIS_SNAPSHOT.intelligenceIndexVersion} snapshot (${facts.join(', ')}) until at least ${REGISTERED_MODEL_MINIMUM_CASES} comparable local cases exist.`;
+	const snapshot = `the ${ARTIFICIAL_ANALYSIS_SNAPSHOT.capturedAt} Artificial Analysis v${ARTIFICIAL_ANALYSIS_SNAPSHOT.intelligenceIndexVersion} snapshot (${facts.join(', ')})`;
+	if (inapplicableEvidenceProvider) {
+		return `Your ${taskType} benchmark results were measured through VS Code models and apply only to the Copilot route, not ${inapplicableEvidenceProvider}. Using prompt signals and ${snapshot}.`;
+	}
+	return `Registered Personal Benchmark results are still being generated. Using prompt signals and ${snapshot} until at least ${REGISTERED_MODEL_MINIMUM_CASES} comparable local cases exist.`;
 }
 
 function normalizeWords(value: string): string {

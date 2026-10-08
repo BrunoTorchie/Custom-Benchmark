@@ -8,7 +8,7 @@ Source and releases: [github.com/BrunoTorchie/Custom-Benchmark](https://github.c
 
 ## Why
 
-Model leaderboards measure someone else's work. This extension measures yours: it observes the prompts you actually send, in the repositories you actually work in, and turns them into a benchmark that reflects your codebase rather than a public evaluation set. Everything stays on your machine.
+Model leaderboards measure someone else's work. This extension measures yours: it observes the prompts you actually send, in the repositories you actually work in, and turns them into a benchmark that reflects your codebase rather than a public evaluation set. Capture and recommendations stay on your machine. Explicitly reviewed benchmark runs send only selected curated prompts to your chosen VS Code models.
 
 ## What it does
 
@@ -22,15 +22,27 @@ Model leaderboards measure someone else's work. This extension measures yours: i
 - Detection of GitHub Copilot, Claude Code, and OpenAI Codex extensions.
 - A permission-restricted local event ledger with secret redaction before persistence.
 - A review list that reads the local ledger and opens any captured event as its redacted record.
-- A configurable raw-trace retention target, defaulting to 90 days.
+- Raw-trace retention, defaulting to 90 days: older ledger events are purged at startup, every six hours, and when the setting changes.
 
-## Preview boundary
+## Scored benchmarks
 
-This `0.0.12` build recommends before submission. Type or paste the draft into **Before You Send**, select **Recommend before sending**, inspect the result, then select **Copy & open**. Copilot receives an unsent prefilled draft through VS Code's supported partial-query command. Claude Code and Codex do not expose a supported prompt-insertion API, so the extension copies the exact draft and opens the selected harness for you to paste, review, and send. It never auto-submits.
+1. Select **Open benchmark workbench** in the sidebar (or **Personal Benchmark: Run Benchmark**).
+2. Create a self-contained case: title, task type, prompt and success checks. Confirm local storage, then save. The latest analyzed draft is prefilled when opening the workbench.
+3. Use **Refresh models**, select cases and up to five models, and choose **Review & run**. The confirmation names the cases, providers and request count. VS Code may ask for model access on first use.
+4. Inspect scores, per-check pass/fail results, response previews, latency and errors. Cancel stops the active request and skips remaining cases. Completed answers are saved as they arrive; history survives reload.
+5. After a complete real run with at least three distinct, unchanged, non-demo cases of one task type, its model scores inform future preflight recommendations for that repository.
 
-The optional live feed observes `UserPromptSubmit` after submission for capture and audit. It is not the primary routing mechanism. The build does not yet capture complete conversations, tool trajectories, patches, or benchmark cases.
+**Run demo benchmark** exercises the same pipeline offline with three synthetic cases and two mock models. Demo runs and synthetic cases never influence recommendations. Capture consent is independent of curated-case storage and benchmark execution.
 
-Because scored local model results are not available yet, model recommendations currently combine task signals with a frozen 2026-09-06 Artificial Analysis snapshot. The dashboard labels that fallback `MODEL - AA HEURISTIC` and explains when registered results will replace it. Provider detection confirms installed harness extensions only; it does not confirm account-level access to the recommended model.
+Scoring supports case-insensitive contains/excludes, whitespace-trimmed exact match and valid JSON checks, equally weighted on a 0–100 scale. These evaluate model answers; this version does not execute generated code, run repository test commands or replay autonomous coding agents. A model being listed does not guarantee provider entitlement: request errors are shown in history and excluded from recommendation evidence. See [docs/benchmark-execution.md](docs/benchmark-execution.md).
+
+## Recommendation and capture boundary
+
+This `0.1.0` build recommends before submission. Type or paste the draft into **Before You Send**, select **Recommend before sending**, inspect the result, then select **Copy & open**. Copilot receives an unsent prefilled draft through VS Code's supported partial-query command. Claude Code and Codex do not expose a supported prompt-insertion API, so the extension copies the exact draft and opens the selected harness for you to paste, review, and send. It never auto-submits.
+
+The optional live feed observes `UserPromptSubmit` after submission for capture and audit. It is not the primary routing mechanism. Capture does not collect complete conversations, tool trajectories or patches. Benchmark cases are explicitly curated in the workbench.
+
+Until eligible local model scores exist, recommendations combine task signals with a frozen 2026-09-06 Artificial Analysis snapshot. The dashboard labels that fallback `MODEL - AA HEURISTIC` and explains when registered results will replace it. Provider detection confirms installed harness extensions only; it does not confirm account-level access to the recommended model.
 
 See [docs/model-recommendation.md](docs/model-recommendation.md) for the complete catalog, metrics, weights, precedence, and limitations.
 
@@ -57,13 +69,13 @@ Existing settings and unrelated hooks are preserved. Disconnect removes only the
 
 ## Privacy
 
-Capture is disabled by default for every folder. The bridge rejects prompts outside the canonical allowlist before writing any bytes. Original prompt text is analyzed only in memory; persisted recommendation data contains a redacted preview of at most 180 characters, a SHA-256 hash, derived routing fields, and source metadata. The data directory receives owner-only permissions on supported filesystems, and this extension contains no upload path.
+Capture is disabled by default for every folder. Manual recommendations still work while capture is off or paused, but remain in memory and are not added to the ledger. The bridge rejects prompts outside the canonical allowlist before writing any bytes. Original prompt text is analyzed only in memory; persisted recommendation data contains a redacted preview of at most 180 characters, a SHA-256 hash, derived routing fields, and source metadata. The data directory receives owner-only permissions on supported filesystems, and capture itself makes no model requests. Curated cases are stored in full after redaction and explicit local-save consent. A reviewed benchmark run sends those prompts through the selected VS Code model provider; provider usage limits and charges may apply. No workspace files or grading answers are sent.
 
 ## Configuration
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `personalBenchmark.rawTraceRetentionDays` | `90` | Retention target, in days, for raw traces that have not become benchmark cases. |
+| `personalBenchmark.rawTraceRetentionDays` | `90` | Days to keep captured ledger events. Older events are deleted; curated benchmark cases and run history are not affected. |
 
 ## Development
 
@@ -73,9 +85,11 @@ Requires Node.js and VS Code `^1.136.0`.
 npm install        # install dependencies
 npm run compile    # generate icons, type-check, lint, bundle
 npm run watch      # rebuild on change
-npm test           # run the extension test suite (47 tests)
+npm test           # run the extension test suite (72 tests)
 npm run package    # production bundle for packaging
 ```
+
+The test runner opens a synthetic workspace. Workflow tests exercise registered commands and clipboard handoff with a mock harness, 100 concurrent ledger writes across two folders, 30 real hook-bridge processes across the three adapters, and scored execution up to 500 case/model pairs. Temporary capture data is cleaned up and clipboard contents are restored. See [docs/stress-test-results.md](docs/stress-test-results.md) for coverage and boundaries.
 
 Press <kbd>F5</kbd> to launch the extension in a development host.
 
@@ -85,11 +99,15 @@ Brand source files live in [brand/](brand/); the shipped icons in [resources/](r
 | --- | --- |
 | [src/extension.ts](src/extension.ts) | Activation, command registration, state wiring |
 | [src/dashboard.ts](src/dashboard.ts) | Activity Bar webview and its rendering |
-| [src/modelCatalog.ts](src/modelCatalog.ts) | The 20 model/reasoning profiles and their metrics |
+| [src/benchmark.ts](src/benchmark.ts) | Case validation, scoring, execution, run history, recommendation evidence |
+| [src/benchmarkPanel.ts](src/benchmarkPanel.ts) | Benchmark workbench webview and the Language Model API adapter |
+| [src/modelCatalog.ts](src/modelCatalog.ts) | The 20 measured model/reasoning profiles and their metrics |
+| [src/providerModels.ts](src/providerModels.ts) | Dated snapshot of each harness's officially offered models |
 | [src/modelSelection.ts](src/modelSelection.ts) | Task-aware ranking and selection precedence |
 | [src/recommendation.ts](src/recommendation.ts) | Prompt analysis and live recommendation |
 | [src/promptFeed.ts](src/promptFeed.ts) | Live `UserPromptSubmit` feed |
 | [src/promptHookFiles.ts](src/promptHookFiles.ts) | Transactional hook configuration |
+| [src/promptInbox.ts](src/promptInbox.ts) | Claims and drains hook-bridge inbox files exactly once |
 | [src/hookBridge.ts](src/hookBridge.ts) | Standalone hook bridge bundled as `prompt-hook.cjs` |
 | [src/redaction.ts](src/redaction.ts) | Secret redaction applied before any write |
 | [src/store.ts](src/store.ts) | Consent state and the local event ledger |

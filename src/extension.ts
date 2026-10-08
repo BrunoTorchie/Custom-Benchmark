@@ -11,8 +11,10 @@ import { getPromptHandoff } from './promptHandoff';
 import { detectProviders } from './providers';
 import { LiveRecommendation, isCurrentRecommendation } from './recommendation';
 import { LocalStore, StoredEvent } from './store';
+import { BenchmarkWorkbench } from './benchmarkPanel';
 
 const LIVE_PROMPT_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
+const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 interface PendingPromptDraft {
 	prompt: string;
@@ -23,6 +25,7 @@ interface PendingPromptDraft {
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	const store = new LocalStore(context);
 	const promptFeed = new PromptFeedService(context, store);
+	const benchmarkWorkbenches = new Map<string, BenchmarkWorkbench>();
 	const pendingPromptDrafts = new Map<string, PendingPromptDraft>();
 	let promptFeedConnected = await promptFeed.initialize();
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
@@ -33,6 +36,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	const refresh = async (): Promise<void> => {
 		snapshot = createSnapshot(store, promptFeedConnected, pendingPromptDrafts);
+		if (snapshot.folder) {
+			try {
+				const benchmark = await store.benchmarks(snapshot.folder).read();
+				snapshot.benchmarkCaseCount = benchmark.cases.length;
+				snapshot.benchmarkRunCount = benchmark.runs.length;
+			} catch {
+				snapshot.benchmarkError = 'Benchmark data could not be read. Open the workbench for details; capture is still available.';
+			}
+		}
 		await updateContext(snapshot.mode);
 		updateStatusBar(statusBar, snapshot);
 		dashboardProvider.refresh();
@@ -63,7 +75,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					modal: true,
 					detail: [
 						'This preview stores consent, recommendations, and pipeline-check events in local extension storage.',
-						'Secrets are redacted before persistence. Nothing is uploaded.',
+						'Capture and recommendations stay local. Curated benchmark prompts are sent to selected models only after a separate run review.',
 						'Live prompt hooks remain disconnected until you explicitly connect them from the dashboard.',
 					].join('\n\n'),
 				},
@@ -182,7 +194,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					detail: [
 						'Adds additive UserPromptSubmit hooks for VS Code/Claude and Codex.',
 						'Only prompts whose working directory belongs to an enabled, unpaused folder are accepted.',
-						'Prompt text is redacted locally and never uploaded. Disconnect removes only Personal Benchmark hooks.',
+						'Captured prompt text stays local. Disconnect removes only Personal Benchmark hooks.',
 					].join('\n\n'),
 				},
 				'Connect locally',
@@ -230,12 +242,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 			const choice = await vscode.window.showWarningMessage(
 				`Permanently delete all Personal Benchmark data for “${folder.name}”?`,
-				{ modal: true, detail: 'This removes local events and consent state. It cannot be undone.' },
+				{ modal: true, detail: 'This removes captured events, consent state, curated benchmark cases, and benchmark run history. It cannot be undone.' },
 				'Delete local data',
 			);
 			if (choice === 'Delete local data') {
 				await runCommand(async () => {
+					const workbench = benchmarkWorkbenches.get(folder.uri.toString());
+					if (workbench?.running) { throw new Error('Cancel the benchmark run before deleting repository data.'); }
+					workbench?.dispose();
+					benchmarkWorkbenches.delete(folder.uri.toString());
 					pendingPromptDrafts.delete(folder.uri.toString());
+					dashboardProvider.forgetDraft(folder);
 					await store.deleteRepositoryData(folder);
 					await promptFeed.syncConfiguration();
 					await refresh();
@@ -267,7 +284,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					})),
 					{
 						title: `Captured activity · ${folder.name}`,
-						placeHolder: `${events.length} captured events. Promotion to benchmark cases still requires reproducible episodes.`,
+						placeHolder: `${events.length} captured events. Use Run Benchmark to curate a self-contained prompt and success checks.`,
 						matchOnDescription: true,
 						matchOnDetail: true,
 					},
@@ -283,8 +300,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await vscode.window.showTextDocument(document, { preview: true });
 			});
 		}),
-		vscode.commands.registerCommand('personalBenchmark.runBenchmark', () => {
-			void vscode.window.showInformationMessage('Promote at least one reproducible case before running a benchmark.');
+		vscode.commands.registerCommand('personalBenchmark.runBenchmark', async () => {
+			await withActiveFolder(async (folder) => {
+				const key = folder.uri.toString();
+				let workbench = benchmarkWorkbenches.get(key);
+				if (!workbench) {
+					workbench = new BenchmarkWorkbench(folder, store.benchmarks(folder), refresh);
+					benchmarkWorkbenches.set(key, workbench);
+					context.subscriptions.push(workbench);
+				}
+				await workbench.open(pendingPromptDrafts.get(key)?.prompt);
+			});
 		}),
 		vscode.commands.registerCommand('personalBenchmark.refresh', async () => runCommand(refreshEnvironment)),
 		vscode.window.onDidChangeActiveTextEditor(refresh),
@@ -294,8 +320,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 	);
 
+	const purgeExpiredTraces = async (): Promise<void> => {
+		const retentionDays = vscode.workspace.getConfiguration('personalBenchmark').get<number>('rawTraceRetentionDays', 90);
+		try {
+			if (await store.purgeExpiredEvents(retentionDays) > 0) {
+				await refresh();
+			}
+		} catch (error) {
+			console.error('Personal Benchmark could not apply raw-trace retention.', error);
+		}
+	};
+	const retentionTimer = setInterval(() => void purgeExpiredTraces(), RETENTION_SWEEP_INTERVAL_MS);
+	context.subscriptions.push(
+		{ dispose: () => clearInterval(retentionTimer) },
+		vscode.workspace.onDidChangeConfiguration((event) => {
+			if (event.affectsConfiguration('personalBenchmark.rawTraceRetentionDays')) {
+				void purgeExpiredTraces();
+			}
+		}),
+	);
+
 	promptFeed.start(async (item) => processLivePrompt(item, store, refresh, pendingPromptDrafts));
 	await refresh();
+	void purgeExpiredTraces();
 }
 
 export function deactivate(): void {}

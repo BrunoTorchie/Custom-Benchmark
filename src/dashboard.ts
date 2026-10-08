@@ -17,6 +17,9 @@ export interface DashboardSnapshot {
 	recommendation?: LiveRecommendation;
 	hasPendingDraft: boolean;
 	promptFeedConnected: boolean;
+	benchmarkCaseCount?: number;
+	benchmarkRunCount?: number;
+	benchmarkError?: string;
 }
 
 const COMMAND_IDS: Readonly<Record<string, string>> = {
@@ -39,6 +42,7 @@ const COMMAND_IDS: Readonly<Record<string, string>> = {
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
 	private view?: vscode.WebviewView;
+	private readonly drafts = new Map<string, string>();
 	private readonly disposables: vscode.Disposable[] = [];
 
 	constructor(
@@ -93,10 +97,18 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider, vscode
 			snapshot.recommendation,
 			snapshot.promptFeedConnected,
 			snapshot.folder !== undefined,
+			snapshot.hasPendingDraft,
+			snapshot.benchmarkCaseCount,
+			snapshot.benchmarkRunCount,
+			this.drafts.get(snapshot.folder?.uri.toString() ?? '') ?? '',
+			snapshot.benchmarkError,
 		);
 	}
 
+	forgetDraft(folder: vscode.WorkspaceFolder): void { this.drafts.delete(folder.uri.toString()); }
+
 	dispose(): void {
+		this.drafts.clear();
 		for (const disposable of this.disposables) {
 			disposable.dispose();
 		}
@@ -107,6 +119,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider, vscode
 			return;
 		}
 
+		if (message.command === 'draftChanged' && message.prompt !== undefined) {
+			const folder = this.getSnapshot().folder;
+			if (folder) { this.drafts.set(folder.uri.toString(), message.prompt); }
+			return;
+		}
 		const commandId = COMMAND_IDS[message.command];
 		if (commandId) {
 			const args = message.command === 'analyzePrompt' && message.prompt
@@ -144,6 +161,10 @@ export function renderDashboard(
 	promptFeedConnected: boolean,
 	hasFolder: boolean,
 	hasPendingDraft = false,
+	benchmarkCaseCount = 0,
+	benchmarkRunCount = 0,
+	draftText = '',
+	benchmarkError?: string,
 ): string {
 	const nonce = randomBytes(16).toString('base64');
 	const repositoryName = escapeHtml(model.repositoryName);
@@ -165,12 +186,12 @@ export function renderDashboard(
 				<span class="source__dot" title="${provider.installed ? 'Extension detected' : 'Extension not detected'}"></span>
 			</div>`;
 	}).join('');
-	const canUseDataActions = hasFolder && (model.mode !== 'off' || model.eventCount > 0);
+	const canUseDataActions = hasFolder && (model.mode !== 'off' || model.eventCount > 0 || benchmarkCaseCount > 0 || benchmarkRunCount > 0);
 	const reviewQueue = model.eventCount > 0
 		? {
 			summary: `${model.eventCount} captured`,
 			title: 'Review captured activity',
-			subtitle: 'Inspect the local ledger; no cases yet',
+			subtitle: 'Inspect redacted captured activity',
 		}
 		: {
 			summary: '0 pending',
@@ -183,6 +204,7 @@ export function renderDashboard(
 		promptFeedConnected,
 		hasFolder,
 		hasPendingDraft,
+		draftText,
 	);
 
 	return `<!DOCTYPE html>
@@ -432,7 +454,7 @@ export function renderDashboard(
 				<button class="button button--primary" data-command="${primaryCommand}">${escapeHtml(primaryLabel)}</button>
 				${secondaryAction}
 			</div>
-			<div class="privacy"><strong>LOCAL ONLY</strong><span>Redacted before write</span></div>
+			<div class="privacy"><strong>LOCAL CAPTURE</strong><span>Model runs require review</span></div>
 		</section>
 
 		${recommendationSection}
@@ -445,8 +467,8 @@ export function renderDashboard(
 
 		<section class="metrics" aria-label="Corpus totals">
 			<div class="metric"><strong>${model.eventCount}</strong><span>EVENTS</span></div>
-			<div class="metric"><strong>0</strong><span>REVIEW</span></div>
-			<div class="metric"><strong>0</strong><span>CASES</span></div>
+			<div class="metric"><strong>${benchmarkRunCount}</strong><span>RUNS</span></div>
+			<div class="metric"><strong>${benchmarkCaseCount}</strong><span>CASES</span></div>
 		</section>
 
 		<section class="section section--sources">
@@ -455,6 +477,7 @@ export function renderDashboard(
 			<p class="sources-note">${promptFeedConnected ? 'Post-submit capture connected locally' : 'Optional post-submit capture'}</p>
 		</section>
 
+		<section class="section"><button class="button button--primary" data-command="runBenchmark" ${hasFolder ? '' : 'disabled'}>Open benchmark workbench</button>${benchmarkError ? `<p role="status">${escapeHtml(benchmarkError)}</p>` : ''}</section>
 		<section class="section section--review">
 			<div class="section__head"><h3>REVIEW QUEUE</h3><span>${escapeHtml(reviewQueue.summary)}</span></div>
 			<button class="queue" data-command="reviewCandidates">
@@ -479,11 +502,15 @@ export function renderDashboard(
 		const syncDraftSubmit = () => {
 			if (draftInput && draftSubmit) draftSubmit.disabled = draftInput.value.trim() === '';
 		};
-		draftInput?.addEventListener('input', syncDraftSubmit);
+		draftInput?.addEventListener('input', () => {
+			syncDraftSubmit();
+			vscode.postMessage({ type: 'command', command: 'draftChanged', prompt: draftInput.value });
+		});
+		syncDraftSubmit();
 		draftForm?.addEventListener('submit', (event) => {
 			event.preventDefault();
-			const prompt = draftInput?.value.trim();
-			if (!prompt || !draftSubmit) return;
+			const prompt = draftInput?.value;
+			if (!prompt?.trim() || !draftSubmit) return;
 			draftSubmit.disabled = true;
 			draftSubmit.textContent = 'Analyzing...';
 			vscode.postMessage({ type: 'command', command: 'analyzePrompt', prompt });
@@ -526,6 +553,7 @@ function renderRecommendation(
 	promptFeedConnected: boolean,
 	hasFolder: boolean,
 	hasPendingDraft: boolean,
+	draftText: string,
 ): string {
 	const badgeClass = promptFeedConnected ? 'live-badge live-badge--connected' : 'live-badge';
 	const badgeLabel = hasPendingDraft
@@ -537,7 +565,7 @@ function renderRecommendation(
 			<div class="recommendation__head"><h3>BEFORE YOU SEND</h3><span class="${badgeClass}">${badgeLabel}</span></div>
 			<form class="draft-form" data-draft-form>
 				<label class="visually-hidden" for="prompt-draft">Task prompt</label>
-				<textarea id="prompt-draft" class="draft-input" data-draft-input maxlength="100000" placeholder="Describe the task you are about to send" ${hasFolder ? '' : 'disabled'}></textarea>
+				<textarea id="prompt-draft" class="draft-input" data-draft-input maxlength="100000" placeholder="Describe the task you are about to send" ${hasFolder ? '' : 'disabled'}>${escapeHtml(draftText)}</textarea>
 				<button class="button button--primary draft-submit" data-draft-submit type="submit" disabled>Recommend before sending</button>
 			</form>
 			<div class="recommendation__actions">

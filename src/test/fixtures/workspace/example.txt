@@ -1,0 +1,2 @@
+Synthetic workspace for Personal Benchmark extension-host tests.
+No credentials, provider accounts, or external requests are required.

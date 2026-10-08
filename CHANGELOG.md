@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0 - 2026-09-18
+
+- Added a benchmark workbench with curated cases, editable checks, model discovery, reviewed execution, cancellation, persistent run history and per-answer scoring.
+- Connected eligible real benchmark results to preflight recommendations; excluded demos, duplicate cases, stale cases and incomplete runs.
+- Added offline demo comparisons, bounded response previews/history, request timeouts and provider error reporting.
+- Fixed handoff visibility, prompt whitespace preservation, capture consent, concurrent state updates, quoted secret redaction and duplicate inbox processing.
+- Added scored-run and workflow stress coverage, plus real VS Code UI verification.
+
 ## Unreleased
 
 - Rebranded the extension to TechTorch and removed the previous publisher identity from the manifest, dashboard, and docs.

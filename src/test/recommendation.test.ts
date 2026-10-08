@@ -10,6 +10,15 @@ const providers: ProviderStatus[] = [
 ];
 
 suite('Prompt recommendation', () => {
+	test('routes an explicitly requested Claude model to a compatible installed harness', () => {
+		const recommendation = recommendModel('Use Claude Haiku 4.5 to fix the failing tests.', providers, 'manual');
+		assert.strictEqual(recommendation.providerId, 'claude');
+		assert.strictEqual(recommendation.modelLabel, 'Claude Haiku 4.5');
+		assert.strictEqual(recommendation.fallbackApplied, false);
+		assert.ok(!recommendation.reason.includes('not installed'));
+		assert.strictEqual(recommendation.modelSelectionBasis, 'explicit-request');
+	});
+
 	test('rejects a persisted recommendation from the fixed-model engine', () => {
 		const legacy = { engineVersion: 1 } as unknown as LiveRecommendation;
 
@@ -44,7 +53,7 @@ suite('Prompt recommendation', () => {
 		);
 
 		assert.strictEqual(recommendation.providerId, 'codex');
-		assert.strictEqual(recommendation.modelLabel, 'GPT 6 Astra');
+		assert.strictEqual(recommendation.modelLabel, 'GPT-6 Astra');
 		assert.strictEqual(recommendation.profileLabel, 'Max reasoning');
 		assert.strictEqual(recommendation.taskType, 'Debugging');
 		assert.ok(recommendation.reason.includes('test'));
@@ -59,8 +68,8 @@ suite('Prompt recommendation', () => {
 		);
 
 		assert.strictEqual(recommendation.providerId, 'copilot');
-		assert.strictEqual(recommendation.modelLabel, 'Gemini 3.5 Flash Lite');
-		assert.strictEqual(recommendation.profileLabel, 'Default reasoning');
+		assert.strictEqual(recommendation.modelLabel, 'Gemini 3.8 Flash');
+		assert.strictEqual(recommendation.profileLabel, 'High reasoning');
 		assert.strictEqual(recommendation.taskType, 'Quick task');
 	});
 
@@ -76,7 +85,7 @@ suite('Prompt recommendation', () => {
 		);
 
 		assert.strictEqual(recommendation.providerId, 'codex');
-		assert.strictEqual(recommendation.modelLabel, 'Claude Fable 5.1');
+		assert.ok(recommendation.modelLabel.startsWith('GPT-'));
 		assert.strictEqual(recommendation.fallbackApplied, true);
 	});
 
@@ -117,7 +126,7 @@ suite('Prompt recommendation', () => {
 
 		assert.strictEqual(recommendation.providerId, 'codex');
 		assert.strictEqual(recommendation.taskType, 'Implementation');
-		assert.strictEqual(recommendation.modelLabel, 'Gemini 3.8 Flash High');
+		assert.ok(recommendation.modelLabel.startsWith('GPT-'));
 	});
 
 	test('uses the fast profile for a small request without specialist signals', () => {
@@ -129,18 +138,18 @@ suite('Prompt recommendation', () => {
 
 		assert.strictEqual(recommendation.providerId, 'copilot');
 		assert.strictEqual(recommendation.taskType, 'Quick task');
-		assert.strictEqual(recommendation.modelLabel, 'Gemini 3.5 Flash Lite');
+		assert.strictEqual(recommendation.modelLabel, 'Gemini 3.8 Flash');
 	});
 
-	test('honors an explicitly requested GPT 5.6 family and effort', () => {
+	test('honors an explicitly requested GPT-5.6 family and effort', () => {
 		const recommendation = recommendModel(
-			'Use GPT 5.6 Terra with medium reasoning to implement the settings page.',
+			'Use GPT-5.6 Terra with medium reasoning to implement the settings page.',
 			providers,
 			'manual',
 		);
 
 		assert.strictEqual(recommendation.modelProfileId, 'gpt-5-6-terra-medium');
-		assert.strictEqual(recommendation.modelLabel, 'GPT 5.6 Terra');
+		assert.strictEqual(recommendation.modelLabel, 'GPT-5.6 Terra');
 		assert.strictEqual(recommendation.profileLabel, 'Medium reasoning');
 		assert.strictEqual(recommendation.modelSelectionBasis, 'explicit-request');
 	});
@@ -157,9 +166,23 @@ suite('Prompt recommendation', () => {
 			],
 		);
 
-		assert.strictEqual(recommendation.modelProfileId, 'claude-opus-4-8');
+		assert.strictEqual(recommendation.modelProfileId, 'gpt-6-astra');
 		assert.strictEqual(recommendation.modelSelectionBasis, 'registered-benchmark');
-		assert.ok(recommendation.modelSelectionNote.includes('8 registered debugging cases'));
+		assert.ok(recommendation.modelSelectionNote.includes('12 registered debugging cases'));
+	});
+
+	test('explains when VS Code benchmark evidence cannot apply to the chosen harness', () => {
+		const recommendation = recommendModel(
+			'Fix the failing authentication tests and trace the regression.',
+			providers,
+			'codex',
+			new Date('2026-09-04T12:00:00Z'),
+			[{ modelProfileId: 'vscode:copilot:gpt-test:1', modelLabel: 'GPT Test', profileLabel: 'copilot · provider defaults', taskType: 'Debugging', sampleSize: 3, score: 90 }],
+		);
+
+		assert.strictEqual(recommendation.modelSelectionBasis, 'artificial-analysis-heuristic');
+		assert.ok(!recommendation.modelSelectionNote.includes('still being generated'), recommendation.modelSelectionNote);
+		assert.ok(recommendation.modelSelectionNote.includes('apply only to the Copilot route'), recommendation.modelSelectionNote);
 	});
 
 	test('ignores registered results below the minimum sample size', () => {

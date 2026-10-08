@@ -73,6 +73,12 @@ async function recoverInterruptedClaims(inboxDirectory: string, fileNames: reado
 			continue;
 		}
 
+		// Renaming preserves the event's mtime, so age alone cannot identify
+		// an abandoned claim. A live extension host may still be processing it.
+		const owner = fileName.slice(markerIndex + CLAIM_MARKER.length).split('-')[0];
+		if (isLiveProcess(owner)) {
+			continue;
+		}
 		const claimedPath = path.join(inboxDirectory, fileName);
 		try {
 			const stats = await fs.stat(claimedPath);
@@ -84,6 +90,19 @@ async function recoverInterruptedClaims(inboxDirectory: string, fileNames: reado
 		} catch {
 			// Another extension host may still own or recover this claim.
 		}
+	}
+}
+
+function isLiveProcess(value: string): boolean {
+	if (!/^\d+$/.test(value) || Number(value) <= 0) {
+		return false;
+	}
+	try {
+		process.kill(Number(value), 0);
+		return true;
+	} catch (error) {
+		// Only ESRCH proves the owner is gone; permission errors do not.
+		return !isNodeError(error) || error.code !== 'ESRCH';
 	}
 }
 

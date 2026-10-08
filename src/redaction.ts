@@ -10,6 +10,14 @@ interface RedactionRule {
 
 const REDACTION_RULES: readonly RedactionRule[] = [
 	{
+		pattern: /((?:[\w-]*(?:API_KEY|TOKEN|SECRET|PASSWORD))["']?\s*[:=]\s*)"(?:\\.|[^"\\\r\n])*"/gi,
+		replacement: (_match, prefix = '') => `${prefix}"[REDACTED]"`,
+	},
+	{
+		pattern: /((?:[\w-]*(?:API_KEY|TOKEN|SECRET|PASSWORD))["']?\s*[:=]\s*)'(?:\\.|[^'\\\r\n])*'/gi,
+		replacement: (_match, prefix = '') => `${prefix}'[REDACTED]'`,
+	},
+	{
 		pattern: /(Authorization\s*:\s*Bearer\s+)[^\s"']+/gi,
 		replacement: (_match, prefix = '') => `${prefix}[REDACTED]`,
 	},
